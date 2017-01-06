@@ -1,0 +1,15 @@
+*.ncb
+*.opt
+*.plg
+*.aps
+*.ipch
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.dsw
+*-i686
+*-x86_64
+Debug/
+Release/
+.vs/
