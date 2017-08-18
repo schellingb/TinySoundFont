@@ -90,6 +90,10 @@ struct tsf_stream
 // Generic SoundFont loading method using the stream structure above
 TSFDEF tsf* tsf_load(struct tsf_stream* stream);
 
+// Copy a tsf instance from an exist one, use tsf_close to close it as well.
+// Copied tsf instances share everything with its base, except 'voices' and 'voiceNum'.
+TSFDEF tsf* tsf_copy(tsf* f);
+
 // Free the memory related to this tsf instance
 TSFDEF void tsf_close(tsf* f);
 
@@ -226,8 +230,10 @@ struct tsf
 	enum TSFOutputMode outputmode;
 	float globalGainDB;
 
-	float* outputSamples;
-	int outputSampleSize;
+	float** outputSamples;
+	int* outputSampleSize;
+
+	int* refCount;
 };
 
 #ifndef TSF_NO_STDIO
@@ -1068,6 +1074,12 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 		res->fontSamples = fontSamples;
 		res->fontSampleCount = fontSampleCount;
 		res->outSampleRate = 44100.0f;
+		res->outputSamples = (float**)TSF_MALLOC(sizeof(float*));
+		*res->outputSamples = TSF_NULL;
+		res->outputSampleSize = (int*)TSF_MALLOC(sizeof(int));
+		*res->outputSampleSize = 0;
+		res->refCount = (int*)TSF_MALLOC(sizeof(int));
+		*res->refCount = 1;
 		fontSamples = TSF_NULL; //don't free below
 		tsf_load_presets(res, &hydra);
 	}
@@ -1078,16 +1090,35 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	return res;
 }
 
+TSFDEF tsf* tsf_copy(tsf* f)
+{
+	tsf* res = TSF_NULL;
+
+	res = (tsf*)TSF_MALLOC(sizeof(tsf));
+	memcpy(res, f, sizeof(tsf));
+	res->voices = TSF_NULL;
+	res->voiceNum = 0;
+	++(*res->refCount);
+
+	return res;
+}
+
 TSFDEF void tsf_close(tsf* f)
 {
 	struct tsf_preset *preset, *presetEnd;
 	if (!f) return;
-	for (preset = f->presets, presetEnd = preset + f->presetNum; preset != presetEnd; preset++)
-		TSF_FREE(preset->regions);
-	TSF_FREE(f->presets);
-	TSF_FREE(f->fontSamples);
+	if (--(*f->refCount) == 0)
+	{
+		for (preset = f->presets, presetEnd = preset + f->presetNum; preset != presetEnd; preset++)
+			TSF_FREE(preset->regions);
+		TSF_FREE(f->presets);
+		TSF_FREE(f->fontSamples);
+		TSF_FREE(*f->outputSamples);
+		TSF_FREE(f->outputSamples);
+		TSF_FREE(f->outputSampleSize);
+		TSF_FREE(f->refCount);
+	}
 	TSF_FREE(f->voices);
-	TSF_FREE(f->outputSamples);
 	TSF_FREE(f);
 }
 
@@ -1201,16 +1232,16 @@ TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing
 	float *floatSamples;
 	int channelSamples = (f->outputmode == TSF_MONO ? 1 : 2) * samples, floatBufferSize = channelSamples * sizeof(float);
 	short* bufferEnd = buffer + channelSamples;
-	if (floatBufferSize > f->outputSampleSize)
+	if (floatBufferSize > *f->outputSampleSize)
 	{
-		TSF_FREE(f->outputSamples);
-		f->outputSamples = (float*)TSF_MALLOC(floatBufferSize);
-		f->outputSampleSize = floatBufferSize;
+		TSF_FREE(*f->outputSamples);
+		*f->outputSamples = (float*)TSF_MALLOC(floatBufferSize);
+		*f->outputSampleSize = floatBufferSize;
 	}
 
-	tsf_render_float(f, f->outputSamples, samples, TSF_FALSE);
+	tsf_render_float(f, *f->outputSamples, samples, TSF_FALSE);
 
-	floatSamples = f->outputSamples;
+	floatSamples = *f->outputSamples;
 	if (flag_mixing) 
 		while (buffer != bufferEnd)
 		{
