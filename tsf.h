@@ -1093,12 +1093,14 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 TSFDEF tsf* tsf_copy(tsf* f)
 {
 	tsf* res = TSF_NULL;
-
-	res = (tsf*)TSF_MALLOC(sizeof(tsf));
-	memcpy(res, f, sizeof(tsf));
-	res->voices = TSF_NULL;
-	res->voiceNum = 0;
-	++(*res->refCount);
+	if (f)
+	{
+		res = (tsf*)TSF_MALLOC(sizeof(tsf));
+		TSF_MEMCPY(res, f, sizeof(tsf));
+		res->voices = TSF_NULL;
+		res->voiceNum = 0;
+		++(*res->refCount);
+	}
 
 	return res;
 }
