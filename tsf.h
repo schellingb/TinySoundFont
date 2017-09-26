@@ -154,7 +154,9 @@ TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing
 // The lower this block size is the more accurate the effects are.
 // Increasing the value significantly lowers the CPU usage of the voice rendering.
 // If LFO affects the low-pass filter it can be hearable even as low as 8.
+#ifndef TSF_RENDER_EFFECTSAMPLEBLOCK
 #define TSF_RENDER_EFFECTSAMPLEBLOCK 64
+#endif
 
 // Grace release time for quick voice off (avoid clicking noise)
 #define TSF_FASTRELEASETIME 0.01f
@@ -991,7 +993,7 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 	}
 
 	v->sourceSamplePosition = tmpSourceSamplePosition;
-	if (dynamicLowpass) v->lowpass = tmpLowpass;
+	if (tmpLowpass.active || dynamicLowpass) v->lowpass = tmpLowpass;
 }
 
 TSFDEF tsf* tsf_load(struct tsf_stream* stream)
