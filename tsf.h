@@ -94,13 +94,16 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream);
 TSFDEF void tsf_close(tsf* f);
 
 // Returns the preset index from a bank and preset number, or -1 if it does not exist in the loaded SoundFont
-TSFDEF int tsf_get_presetindex(tsf* f, int bank, int preset_number);
+TSFDEF int tsf_get_presetindex(const tsf* f, int bank, int preset_number);
 
 // Returns the number of presets in the loaded SoundFont
-TSFDEF int tsf_get_presetcount(tsf* f);
+TSFDEF int tsf_get_presetcount(const tsf* f);
 
 // Returns the name of a preset index >= 0 and < tsf_get_presetcount()
-TSFDEF const char* tsf_get_presetname(tsf* f, int preset_index);
+TSFDEF const char* tsf_get_presetname(const tsf* f, int preset_index);
+
+// Returns the name of a preset by bank and preset number
+TSFDEF const char* tsf_bank_get_presetname(const tsf* f, int bank, int preset_number);
 
 // Supported output modes by the render methods
 enum TSFOutputMode
@@ -127,13 +130,16 @@ TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate
 
 // Start playing a note
 //   preset_index: preset index >= 0 and < tsf_get_presetcount()
-//                 can also be looked up by bank with tsf_get_presetindex
 //   key: note value between 0 and 127 (60 being middle C)
 //   vel: velocity as a float between 0.0 (equal to note off) and 1.0 (full)
+//   bank: instrument bank number (alternative to preset_index)
+//   preset_number: preset number (alternative to preset_index)
 TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel);
+TSFDEF void tsf_bank_note_on(tsf* f, int bank, int preset_number, int key, float vel);
 
 // Stop playing a note
 TSFDEF void tsf_note_off(tsf* f, int preset_index, int key);
+TSFDEF void tsf_bank_note_off(tsf* f, int bank, int preset_number, int key);
 
 // Render output samples into a buffer
 // You can either render as signed 16-bit values (tsf_render_short) or
@@ -1097,9 +1103,9 @@ TSFDEF void tsf_close(tsf* f)
 	TSF_FREE(f);
 }
 
-TSFDEF int tsf_get_presetindex(tsf* f, int bank, int preset_number)
+TSFDEF int tsf_get_presetindex(const tsf* f, int bank, int preset_number)
 {
-	struct tsf_preset *presets;
+	const struct tsf_preset *presets;
 	int i, iMax;
 	for (presets = f->presets, i = 0, iMax = f->presetNum; i < iMax; i++)
 		if (presets[i].preset == preset_number && presets[i].bank == bank)
@@ -1107,14 +1113,19 @@ TSFDEF int tsf_get_presetindex(tsf* f, int bank, int preset_number)
 	return -1;
 }
 
-TSFDEF int tsf_get_presetcount(tsf* f)
+TSFDEF int tsf_get_presetcount(const tsf* f)
 {
 	return f->presetNum;
 }
 
-TSFDEF const char* tsf_get_presetname(tsf* f, int preset)
+TSFDEF const char* tsf_get_presetname(const tsf* f, int preset)
 {
 	return (preset < 0 || preset >= f->presetNum ? TSF_NULL : f->presets[preset].presetName);
+}
+
+TSFDEF const char* tsf_bank_get_presetname(const tsf* f, int bank, int preset_number)
+{
+	return tsf_get_presetname(f, tsf_get_presetindex(f, bank, preset_number));
 }
 
 TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate, float globalgaindb)
@@ -1204,12 +1215,22 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 	}
 }
 
+TSFDEF void tsf_bank_note_on(tsf* f, int bank, int preset_number, int key, float vel)
+{
+	tsf_note_on(f, tsf_get_presetindex(f, bank, preset_number), key, vel);
+}
+
 TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 {
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset == preset_index && v->playingKey == key)
 			tsf_voice_end(v, f->outSampleRate);
+}
+
+TSFDEF void tsf_bank_note_off(tsf* f, int bank, int preset_number, int key)
+{
+	tsf_note_off(f, tsf_get_presetindex(f, bank, preset_number), key);
 }
 
 TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing)
