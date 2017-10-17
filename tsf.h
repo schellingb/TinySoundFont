@@ -93,11 +93,14 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream);
 // Free the memory related to this tsf instance
 TSFDEF void tsf_close(tsf* f);
 
+// Returns the preset index from a bank and preset number, or -1 if it does not exist in the loaded SoundFont
+TSFDEF int tsf_get_presetindex(tsf* f, int bank, int preset_number);
+
 // Returns the number of presets in the loaded SoundFont
 TSFDEF int tsf_get_presetcount(tsf* f);
 
 // Returns the name of a preset index >= 0 and < tsf_get_presetcount()
-TSFDEF const char* tsf_get_presetname(tsf* f, int preset);
+TSFDEF const char* tsf_get_presetname(tsf* f, int preset_index);
 
 // Supported output modes by the render methods
 enum TSFOutputMode
@@ -123,13 +126,14 @@ enum TSFOutputMode
 TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate, float globalgaindb CPP_DEFAULT0);
 
 // Start playing a note
-//   preset: preset index >= 0 and < tsf_get_presetcount()
+//   preset_index: preset index >= 0 and < tsf_get_presetcount()
+//                 can also be looked up by bank with tsf_get_presetindex
 //   key: note value between 0 and 127 (60 being middle C)
 //   vel: velocity as a float between 0.0 (equal to note off) and 1.0 (full)
-TSFDEF void tsf_note_on(tsf* f, int preset, int key, float vel);
+TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel);
 
 // Stop playing a note
-TSFDEF void tsf_note_off(tsf* f, int preset, int key);
+TSFDEF void tsf_note_off(tsf* f, int preset_index, int key);
 
 // Render output samples into a buffer
 // You can either render as signed 16-bit values (tsf_render_short) or
@@ -1093,6 +1097,16 @@ TSFDEF void tsf_close(tsf* f)
 	TSF_FREE(f);
 }
 
+TSFDEF int tsf_get_presetindex(tsf* f, int bank, int preset_number)
+{
+	struct tsf_preset *presets;
+	int i, iMax;
+	for (presets = f->presets, i = 0, iMax = f->presetNum; i < iMax; i++)
+		if (presets[i].preset == preset_number && presets[i].bank == bank)
+			return i;
+	return -1;
+}
+
 TSFDEF int tsf_get_presetcount(tsf* f)
 {
 	return f->presetNum;
@@ -1110,31 +1124,31 @@ TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate
 	f->globalGainDB = globalgaindb;
 }
 
-TSFDEF void tsf_note_on(tsf* f, int preset, int key, float vel)
+TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 {
 	int midiVelocity = (int)(vel * 127);
 	TSF_BOOL haveGroupedNotesPlaying = TSF_FALSE;
 	struct tsf_voice *v, *vEnd; struct tsf_region *region, *regionEnd;
 
-	if (preset < 0 || preset >= f->presetNum) return;
+	if (preset_index < 0 || preset_index >= f->presetNum) return;
 
 	// Are any grouped notes playing? (Needed for group stopping) Also stop any voices still playing this note.
 	for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
 	{
-		if (v->playingPreset != preset) continue;
+		if (v->playingPreset != preset_index) continue;
 		if (v->playingKey == key) tsf_voice_endquick(v, f->outSampleRate);
 		if (v->region->group) haveGroupedNotesPlaying = TSF_TRUE;
 	}
 
 	// Play all matching regions.
-	for (region = f->presets[preset].regions, regionEnd = region + f->presets[preset].regionNum; region != regionEnd; region++)
+	for (region = f->presets[preset_index].regions, regionEnd = region + f->presets[preset_index].regionNum; region != regionEnd; region++)
 	{
 		struct tsf_voice* voice = TSF_NULL; double adjustedPan; TSF_BOOL doLoop; float filterQDB;
 		if (key < region->lokey || key > region->hikey || midiVelocity < region->lovel || midiVelocity > region->hivel) continue;
 
 		if (haveGroupedNotesPlaying && region->group)
 			for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
-				if (v->playingPreset == preset && v->region->group == region->group)
+				if (v->playingPreset == preset_index && v->region->group == region->group)
 					tsf_voice_endquick(v, f->outSampleRate);
 
 		for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++) if (v->playingPreset == -1) { voice = v; break; }
@@ -1147,7 +1161,7 @@ TSFDEF void tsf_note_on(tsf* f, int preset, int key, float vel)
 		}
 
 		voice->region = region;
-		voice->playingPreset = preset;
+		voice->playingPreset = preset_index;
 		voice->playingKey = key;
 
 		// Pitch.
@@ -1190,11 +1204,11 @@ TSFDEF void tsf_note_on(tsf* f, int preset, int key, float vel)
 	}
 }
 
-TSFDEF void tsf_note_off(tsf* f, int preset, int key)
+TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 {
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
-		if (v->playingPreset == preset && v->playingKey == key)
+		if (v->playingPreset == preset_index && v->playingKey == key)
 			tsf_voice_end(v, f->outSampleRate);
 }
 
