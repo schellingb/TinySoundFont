@@ -231,20 +231,20 @@ typedef char tsf_char20[20];
 struct tsf
 {
 	struct tsf_preset* presets;
-	int presetNum;
-
 	float* fontSamples;
-	int fontSampleCount;
+	struct tsf_voice* voices;
+	float* outputSamples;
 
-	struct tsf_voice *voices;
+	int presetNum;
+	int fontSampleCount;
 	int voiceNum;
+	int outputSampleSize;
+	unsigned int voicePlayIndex;
 
 	float outSampleRate;
 	enum TSFOutputMode outputmode;
 	float globalGainDB, globalPanFactorLeft, globalPanFactorRight;
 
-	float* outputSamples;
-	int outputSampleSize;
 };
 
 #ifndef TSF_NO_STDIO
@@ -357,7 +357,7 @@ struct tsf_voice
 	double pitchInputTimecents, pitchOutputFactor;
 	double sourceSamplePosition;
 	float  noteGainDB, panFactorLeft, panFactorRight;
-	unsigned int sampleEnd, loopStart, loopEnd;
+	unsigned int playIndex, sampleEnd, loopStart, loopEnd;
 	struct tsf_voice_envelope ampenv, modenv;
 	struct tsf_voice_lowpass lowpass;
 	struct tsf_voice_lfo modlfo, viblfo;
@@ -1150,21 +1150,22 @@ TSFDEF void tsf_set_panning(tsf* f, float pan_factor_left, float pan_factor_righ
 
 TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 {
-	int midiVelocity = (int)(vel * 127);
+	int midiVelocity = (int)(vel * 127), voicePlayIndex;
 	TSF_BOOL haveGroupedNotesPlaying = TSF_FALSE;
 	struct tsf_voice *v, *vEnd; struct tsf_region *region, *regionEnd;
 
-	if (preset_index < 0 || preset_index >= f->presetNum || midiVelocity <= 0) return;
+	if (preset_index < 0 || preset_index >= f->presetNum) return;
+	if (vel <= 0.0f) { tsf_note_off(f, preset_index, key); return; }
 
 	// Are any grouped notes playing? (Needed for group stopping) Also stop any voices still playing this note.
 	for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
 	{
 		if (v->playingPreset != preset_index) continue;
-		if (v->playingKey == key) tsf_voice_endquick(v, f->outSampleRate);
 		if (v->region->group) haveGroupedNotesPlaying = TSF_TRUE;
 	}
 
 	// Play all matching regions.
+	voicePlayIndex = f->voicePlayIndex++;
 	for (region = f->presets[preset_index].regions, regionEnd = region + f->presets[preset_index].regionNum; region != regionEnd; region++)
 	{
 		struct tsf_voice* voice = TSF_NULL; double adjustedPan; TSF_BOOL doLoop; float filterQDB;
@@ -1187,6 +1188,7 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		voice->region = region;
 		voice->playingPreset = preset_index;
 		voice->playingKey = key;
+		voice->playIndex = voicePlayIndex;
 
 		// Pitch.
 		voice->curPitchWheel = 8192;
@@ -1235,10 +1237,21 @@ TSFDEF void tsf_bank_note_on(tsf* f, int bank, int preset_number, int key, float
 
 TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast;
 	for (; v != vEnd; v++)
-		if (v->playingPreset == preset_index && v->playingKey == key)
-			tsf_voice_end(v, f->outSampleRate);
+	{
+		//Find the first and last entry in the voices list with matching preset, key and look up the smallest play index
+		if (v->playingPreset != preset_index || v->playingKey != key) continue;
+		else if (!vMatchFirst || v->playIndex < vMatchFirst->playIndex) vMatchFirst = vMatchLast = v;
+		else if (v->playIndex == vMatchFirst->playIndex) vMatchLast = v;
+	}
+	if (!vMatchFirst) return;
+	for (v = vMatchFirst; v <= vMatchLast; v++)
+	{
+		//Stop all voices with matching preset, key and the smallest play index which was enumerated above
+		if (v->playIndex != vMatchFirst->playIndex || v->playingPreset != preset_index || v->playingKey != key) continue;
+		tsf_voice_end(v, f->outSampleRate);
+	}
 }
 
 TSFDEF void tsf_bank_note_off(tsf* f, int bank, int preset_number, int key)
