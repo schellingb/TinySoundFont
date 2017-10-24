@@ -80,10 +80,10 @@ struct tsf_stream
 	// Custom data given to the functions as the first parameter
 	void* data;
 
-	// Function pointer will be called to read 'size' bytes into ptr
+	// Function pointer will be called to read 'size' bytes into ptr (returns number of read bytes)
 	int (*read)(void* data, void* ptr, unsigned int size);
 
-	// Function pointer will be called to skip ahead over 'count' bytes
+	// Function pointer will be called to skip ahead over 'count' bytes (returns 1 on success, 0 on error)
 	int (*skip)(void* data, unsigned int count);
 };
 
@@ -1241,7 +1241,7 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching preset, key and look up the smallest play index
-		if (v->playingPreset != preset_index || v->playingKey != key) continue;
+		if (v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_SUSTAIN) continue;
 		else if (!vMatchFirst || v->playIndex < vMatchFirst->playIndex) vMatchFirst = vMatchLast = v;
 		else if (v->playIndex == vMatchFirst->playIndex) vMatchLast = v;
 	}
@@ -1249,7 +1249,8 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 	for (v = vMatchFirst; v <= vMatchLast; v++)
 	{
 		//Stop all voices with matching preset, key and the smallest play index which was enumerated above
-		if (v->playIndex != vMatchFirst->playIndex || v->playingPreset != preset_index || v->playingKey != key) continue;
+		if (v != vMatchFirst && v != vMatchLast &&
+			(v->playIndex != vMatchFirst->playIndex || v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_SUSTAIN)) continue;
 		tsf_voice_end(v, f->outSampleRate);
 	}
 }
