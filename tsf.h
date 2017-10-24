@@ -1241,7 +1241,7 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching preset, key and look up the smallest play index
-		if (v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_SUSTAIN) continue;
+		if (v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE) continue;
 		else if (!vMatchFirst || v->playIndex < vMatchFirst->playIndex) vMatchFirst = vMatchLast = v;
 		else if (v->playIndex == vMatchFirst->playIndex) vMatchLast = v;
 	}
@@ -1250,7 +1250,7 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 	{
 		//Stop all voices with matching preset, key and the smallest play index which was enumerated above
 		if (v != vMatchFirst && v != vMatchLast &&
-			(v->playIndex != vMatchFirst->playIndex || v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_SUSTAIN)) continue;
+			(v->playIndex != vMatchFirst->playIndex || v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE)) continue;
 		tsf_voice_end(v, f->outSampleRate);
 	}
 }
