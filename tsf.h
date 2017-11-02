@@ -1,4 +1,4 @@
-/* TinySoundFont - v0.7 - SoundFont2 synthesizer - https://github.com/schellingb/TinySoundFont
+/* TinySoundFont - v0.8 - SoundFont2 synthesizer - https://github.com/schellingb/TinySoundFont
                                      no warranty implied; use at your own risk
    Do this:
       #define TSF_IMPLEMENTATION
@@ -19,6 +19,7 @@
      - Support for ChorusEffectsSend and ReverbEffectsSend generators
      - Better low-pass filter without lowering performance too much
      - Support for modulators
+     - Channel interface to better support MIDI playback
 
    LICENSE (MIT)
 
@@ -145,6 +146,9 @@ TSFDEF void tsf_bank_note_on(tsf* f, int bank, int preset_number, int key, float
 // Stop playing a note
 TSFDEF void tsf_note_off(tsf* f, int preset_index, int key);
 TSFDEF void tsf_bank_note_off(tsf* f, int bank, int preset_number, int key);
+
+// Stop playing all notes
+TSFDEF void tsf_note_off_all(tsf* f);
 
 // Render output samples into a buffer
 // You can either render as signed 16-bit values (tsf_render_short) or
@@ -896,7 +900,7 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 	float tmpModLfoToPitch, tmpVibLfoToPitch, tmpModEnvToPitch;
 
 	TSF_BOOL dynamicGain = (region->modLfoToVolume != 0);
-	float noteGain, tmpModLfoToVolume;
+	float noteGain = 0, tmpModLfoToVolume;
 
 	if (dynamicLowpass) tmpSampleRate = f->outSampleRate, tmpInitialFilterFc = (float)region->initialFilterFc, tmpModLfoToFilterFc = (float)region->modLfoToFilterFc, tmpModEnvToFilterFc = (float)region->modEnvToFilterFc;
 	else tmpSampleRate = 0, tmpInitialFilterFc = 0, tmpModLfoToFilterFc = 0, tmpModEnvToFilterFc = 0;
@@ -1258,6 +1262,13 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 TSFDEF void tsf_bank_note_off(tsf* f, int bank, int preset_number, int key)
 {
 	tsf_note_off(f, tsf_get_presetindex(f, bank, preset_number), key);
+}
+
+TSFDEF void tsf_note_off_all(tsf* f)
+{
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
+		tsf_voice_end(v, f->outSampleRate);
 }
 
 TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing)
