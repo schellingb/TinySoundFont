@@ -134,6 +134,17 @@ TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate
 //    pan_factor_right: volume gain factor for the right channel
 TSFDEF void tsf_set_panning(tsf* f, float pan_factor_left, float pan_factor_right);
 
+// Adjust preset panning values. Mono output will apply the average of both.
+//    preset_index: preset index >= 0 and < tsf_get_presetcount()
+//    pan_factor_left: volume gain factor for the left channel
+//    pan_factor_right: volume gain factor for the right channel
+TSFDEF void tsf_set_preset_panning(tsf* f, int preset, float pan_factor_left, float pan_factor_right);
+
+// Adjust preset gain values.
+//    preset_index: preset index >= 0 and < tsf_get_presetcount()
+//    gaindb: volume gain in decibels (>0 means higher, <0 means lower)
+TSFDEF void tsf_set_preset_gain(tsf* f, int preset, float gaindb);
+
 // Start playing a note
 //   preset_index: preset index >= 0 and < tsf_get_presetcount()
 //   key: note value between 0 and 127 (60 being middle C)
@@ -352,6 +363,7 @@ struct tsf_preset
 	tsf_u16 preset, bank;
 	struct tsf_region* regions;
 	int regionNum;
+	float gainDB, panFactorLeft, panFactorRight;
 };
 
 struct tsf_voice
@@ -537,6 +549,8 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra)
 		}
 
 		preset->regions = (struct tsf_region*)TSF_MALLOC(preset->regionNum * sizeof(struct tsf_region));
+		preset->panFactorLeft = preset->panFactorRight = 1.0;
+		preset->gainDB = 0.0;
 
 		// Zones.
 		//*** TODO: Handle global zone (modulators only).
@@ -1152,11 +1166,26 @@ TSFDEF void tsf_set_panning(tsf* f, float pan_factor_left, float pan_factor_righ
 	f->globalPanFactorRight = pan_factor_right;
 }
 
+TSFDEF void tsf_set_preset_panning(tsf* f, int preset, float pan_factor_left, float pan_factor_right)
+{
+	if (preset < 0 || preset >= f->presetNum) return;
+
+	f->presets[preset].panFactorLeft = pan_factor_left;
+	f->presets[preset].panFactorRight = pan_factor_right;
+}
+
+TSFDEF void tsf_set_preset_gain(tsf* f, int preset, float gain) {
+	if (preset < 0 || preset >= f->presetNum) return;
+
+	f->presets[preset].gainDB = gain;
+}
+
 TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 {
 	int midiVelocity = (int)(vel * 127), voicePlayIndex;
 	TSF_BOOL haveGroupedNotesPlaying = TSF_FALSE;
 	struct tsf_voice *v, *vEnd; struct tsf_region *region, *regionEnd;
+	struct tsf_preset preset = f->presets[preset_index];
 
 	if (preset_index < 0 || preset_index >= f->presetNum) return;
 	if (vel <= 0.0f) { tsf_note_off(f, preset_index, key); return; }
@@ -1170,7 +1199,7 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 
 	// Play all matching regions.
 	voicePlayIndex = f->voicePlayIndex++;
-	for (region = f->presets[preset_index].regions, regionEnd = region + f->presets[preset_index].regionNum; region != regionEnd; region++)
+	for (region = preset.regions, regionEnd = region + preset.regionNum; region != regionEnd; region++)
 	{
 		struct tsf_voice* voice = TSF_NULL; double adjustedPan; TSF_BOOL doLoop; float filterQDB;
 		if (key < region->lokey || key > region->hikey || midiVelocity < region->lovel || midiVelocity > region->hivel) continue;
@@ -1199,13 +1228,13 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		tsf_voice_calcpitchratio(voice, f->outSampleRate);
 
 		// Gain.
-		voice->noteGainDB = f->globalGainDB + region->volume;
+		voice->noteGainDB = f->globalGainDB + region->volume + preset.gainDB;
 		// Thanks to <http:://www.drealm.info/sfz/plj-sfz.xhtml> for explaining the velocity curve in a way that I could understand, although they mean "log10" when they say "log".
 		voice->noteGainDB += (float)(-20.0 * TSF_LOG10(1.0 / vel));
 		// The SFZ spec is silent about the pan curve, but a 3dB pan law seems common. This sqrt() curve matches what Dimension LE does; Alchemy Free seems closer to sin(adjustedPan * pi/2).
 		adjustedPan = (region->pan + 100.0) / 200.0;
-		voice->panFactorLeft = (float)TSF_SQRT(1.0 - adjustedPan);
-		voice->panFactorRight = (float)TSF_SQRT(adjustedPan);
+		voice->panFactorLeft = (float)TSF_SQRT(1.0 - adjustedPan) * preset.panFactorLeft;
+		voice->panFactorRight = (float)TSF_SQRT(adjustedPan) * preset.panFactorRight;
 
 		// Offset/end.
 		voice->sourceSamplePosition = region->offset;
