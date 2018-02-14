@@ -495,7 +495,7 @@ static void tsf_region_envtosecs(struct tsf_envelope* p, TSF_BOOL sustainIsGain)
 
 static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra)
 {
-	enum { GenInstrument = 41, GenSampleID = 53 };
+	enum { GenInstrument = 41, GenKeyRange = 43, GenVelRange = 44, GenSampleID = 53 };
 	// Read each preset.
 	struct tsf_hydra_phdr *pphdr, *pphdrMax;
 	for (pphdr = hydra->phdrs, pphdrMax = pphdr + hydra->phdrNum - 1; pphdr != pphdrMax; pphdr++)
@@ -523,16 +523,25 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra)
 		//count regions covered by this preset
 		for (ppbag = hydra->pbags + pphdr->presetBagNdx, ppbagEnd = hydra->pbags + pphdr[1].presetBagNdx; ppbag != ppbagEnd; ppbag++)
 		{
+			unsigned char plokey = 0, phikey = 127, plovel = 0, phivel = 127;
 			struct tsf_hydra_pgen *ppgen, *ppgenEnd; struct tsf_hydra_inst *pinst; struct tsf_hydra_ibag *pibag, *pibagEnd; struct tsf_hydra_igen *pigen, *pigenEnd;
 			for (ppgen = hydra->pgens + ppbag->genNdx, ppgenEnd = hydra->pgens + ppbag[1].genNdx; ppgen != ppgenEnd; ppgen++)
 			{
+				if (ppgen->genOper == GenKeyRange) { plokey = ppgen->genAmount.range.lo; phikey = ppgen->genAmount.range.hi; continue; }
+				if (ppgen->genOper == GenVelRange) { plovel = ppgen->genAmount.range.lo; phivel = ppgen->genAmount.range.hi; continue; }
 				if (ppgen->genOper != GenInstrument) continue;
 				if (ppgen->genAmount.wordAmount >= hydra->instNum) continue;
 				pinst = hydra->insts + ppgen->genAmount.wordAmount;
 				for (pibag = hydra->ibags + pinst->instBagNdx, pibagEnd = hydra->ibags + pinst[1].instBagNdx; pibag != pibagEnd; pibag++)
+				{
+					unsigned char ilokey = 0, ihikey = 127, ilovel = 0, ihivel = 127;
 					for (pigen = hydra->igens + pibag->instGenNdx, pigenEnd = hydra->igens + pibag[1].instGenNdx; pigen != pigenEnd; pigen++)
-						if (pigen->genOper == GenSampleID)
-							preset->regionNum++;
+					{
+						if (pigen->genOper == GenKeyRange) { ilokey = pigen->genAmount.range.lo; ihikey = pigen->genAmount.range.hi; continue; }
+						if (pigen->genOper == GenVelRange) { ilovel = pigen->genAmount.range.lo; ihivel = pigen->genAmount.range.hi; continue; }
+						if (pigen->genOper == GenSampleID && ihikey >= plokey && ilokey <= phikey && ihivel >= plovel && ilovel <= phivel) preset->regionNum++;
+					}
+				}
 			}
 		}
 
@@ -557,15 +566,6 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra)
 					if (whichInst >= hydra->instNum) continue;
 
 					tsf_region_clear(&instRegion, TSF_FALSE);
-					// Preset generators are supposed to be "relative" modifications of
-					// the instrument settings, but that makes no sense for ranges.
-					// For those, we'll have the instrument's generator take
-					// precedence, though that may not be correct.
-					instRegion.lokey = presetRegion.lokey;
-					instRegion.hikey = presetRegion.hikey;
-					instRegion.lovel = presetRegion.lovel;
-					instRegion.hivel = presetRegion.hivel;
-
 					pinst = &hydra->insts[whichInst];
 					for (pibag = hydra->ibags + pinst->instBagNdx, pibagEnd = hydra->ibags + pinst[1].instBagNdx; pibag != pibagEnd; pibag++)
 					{
@@ -576,7 +576,15 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra)
 						{
 							if (pigen->genOper == GenSampleID)
 							{
-								struct tsf_hydra_shdr* pshdr = &hydra->shdrs[pigen->genAmount.wordAmount];
+								struct tsf_hydra_shdr* pshdr;
+
+								//preset region key and vel ranges are a filter for the zone regions
+								if (zoneRegion.hikey < presetRegion.lokey || zoneRegion.lokey > presetRegion.hikey) continue;
+								if (zoneRegion.hivel < presetRegion.lovel || zoneRegion.lovel > presetRegion.hivel) continue;
+								if (presetRegion.lokey > zoneRegion.lokey) zoneRegion.lokey = presetRegion.lokey;
+								if (presetRegion.hikey < zoneRegion.hikey) zoneRegion.hikey = presetRegion.hikey;
+								if (presetRegion.lovel > zoneRegion.lovel) zoneRegion.lovel = presetRegion.lovel;
+								if (presetRegion.hivel < zoneRegion.hivel) zoneRegion.hivel = presetRegion.hivel;
 
 								//sum regions
 								zoneRegion.offset += presetRegion.offset;
@@ -626,6 +634,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra)
 								else if (zoneRegion.pan > 100.0f) zoneRegion.pan = 100.0f;
 								if (zoneRegion.initialFilterQ < 1500 || zoneRegion.initialFilterQ > 13500) zoneRegion.initialFilterQ = 0;
 
+								pshdr = &hydra->shdrs[pigen->genAmount.wordAmount];
 								zoneRegion.offset += pshdr->start;
 								zoneRegion.end += pshdr->end;
 								zoneRegion.loop_start += pshdr->startLoop;
