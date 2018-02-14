@@ -27,11 +27,18 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 		//Loop through all MIDI messages which need to be played up until the current playback time
 		for (g_Msec += SampleBlock * (1000.0 / 44100.0); g_MidiMessage && g_Msec >= g_MidiMessage->time; g_MidiMessage = g_MidiMessage->next)
 		{
+			int Preset;
 			switch (g_MidiMessage->type)
 			{
 				case TML_PROGRAM_CHANGE: //channel program (preset) change
-					g_MidiChannelPreset[g_MidiMessage->channel] = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
-					if (g_MidiChannelPreset[g_MidiMessage->channel] < 0) g_MidiChannelPreset[g_MidiMessage->channel] = 0;
+					if (g_MidiMessage->channel == 9) //10th MIDI channel uses percussion sound bank (128)
+					{
+						Preset = tsf_get_presetindex(g_TinySoundFont, 128, g_MidiMessage->program);
+						if (Preset < 0) Preset = tsf_get_presetindex(g_TinySoundFont, 128, 0);
+						if (Preset < 0) Preset = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
+					}
+					else Preset = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
+					g_MidiChannelPreset[g_MidiMessage->channel] = (Preset < 0 ? 0 : Preset);
 					break;
 				case TML_NOTE_ON: //play a note
 					tsf_note_on(g_TinySoundFont, g_MidiChannelPreset[g_MidiMessage->channel], g_MidiMessage->key, g_MidiMessage->velocity / 127.0f);
