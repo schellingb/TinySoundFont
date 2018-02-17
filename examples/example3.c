@@ -10,7 +10,6 @@
 static tsf* g_TinySoundFont;
 
 // Holds global MIDI playback state
-static int g_MidiChannelPreset[16]; //active channel presets
 static double g_Msec;               //current playback time
 static tml_message* g_MidiMessage;  //next message to be played
 
@@ -31,20 +30,53 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 			switch (g_MidiMessage->type)
 			{
 				case TML_PROGRAM_CHANGE: //channel program (preset) change
-					if (g_MidiMessage->channel == 9) //10th MIDI channel uses percussion sound bank (128)
+					if (g_MidiMessage->channel == 9)
 					{
+						//10th MIDI channel uses percussion sound bank (128)
 						Preset = tsf_get_presetindex(g_TinySoundFont, 128, g_MidiMessage->program);
 						if (Preset < 0) Preset = tsf_get_presetindex(g_TinySoundFont, 128, 0);
 						if (Preset < 0) Preset = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
 					}
 					else Preset = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
-					g_MidiChannelPreset[g_MidiMessage->channel] = (Preset < 0 ? 0 : Preset);
+					tsf_channel_set_preset(g_TinySoundFont, g_MidiMessage->channel, (Preset < 0 ? 0 : Preset));
 					break;
 				case TML_NOTE_ON: //play a note
-					tsf_note_on(g_TinySoundFont, g_MidiChannelPreset[g_MidiMessage->channel], g_MidiMessage->key, g_MidiMessage->velocity / 127.0f);
+					tsf_channel_note_on(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->key, g_MidiMessage->velocity / 127.0f);
 					break;
 				case TML_NOTE_OFF: //stop a note
-					tsf_note_off(g_TinySoundFont, g_MidiChannelPreset[g_MidiMessage->channel], g_MidiMessage->key);
+					tsf_channel_note_off(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->key);
+					break;
+				case TML_PITCH_BEND: //pitch wheel modification
+					tsf_channel_set_pitchwheel(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->pitch_bend);
+					break;
+				case TML_CONTROL_CHANGE: //MIDI controller messages
+					switch (g_MidiMessage->control)
+					{
+						#define FLOAT_APPLY_MSB(val, msb) (((((int)(val*16383.5f)) &  0x7f) | (msb << 7)) / 16383.0f)
+						#define FLOAT_APPLY_LSB(val, lsb) (((((int)(val*16383.5f)) & ~0x7f) |  lsb      ) / 16383.0f)
+						case TML_VOLUME_MSB: case TML_EXPRESSION_MSB:
+							tsf_channel_set_volume(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_MSB(tsf_channel_get_volume(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
+							break;
+						case TML_VOLUME_LSB: case TML_EXPRESSION_LSB:
+							tsf_channel_set_volume(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_LSB(tsf_channel_get_volume(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
+							break;
+						case TML_BALANCE_MSB: case TML_PAN_MSB: 
+							tsf_channel_set_pan(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_MSB(tsf_channel_get_pan(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
+							break;
+						case TML_BALANCE_LSB: case TML_PAN_LSB:
+							tsf_channel_set_pan(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_LSB(tsf_channel_get_pan(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
+							break;
+						case TML_ALL_SOUND_OFF:
+							tsf_channel_sounds_off_all(g_TinySoundFont, g_MidiMessage->channel);
+							break;
+						case TML_ALL_CTRL_OFF:
+							tsf_channel_set_volume(g_TinySoundFont, g_MidiMessage->channel, 1.0f);
+							tsf_channel_set_pan(g_TinySoundFont, g_MidiMessage->channel, 0.5f);
+							break;
+						case TML_ALL_NOTES_OFF:
+							tsf_channel_note_off_all(g_TinySoundFont, g_MidiMessage->channel);
+							break;
+					}
 					break;
 			}
 		}
@@ -94,6 +126,9 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	//Initialize preset on special 10th MIDI channel to use percussion sound bank (128) if available
+	tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0);
+
 	// Set the SoundFont rendering output mode with -18 db volume gain
 	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, -18.0f);
 
@@ -111,7 +146,7 @@ int main(int argc, char *argv[])
 	//Wait until the entire MIDI file has been played back (until the end of the linked message list is reached)
 	while (g_MidiMessage != NULL) SDL_Delay(100);
 
-	// We could call tsf_close(g_TinySoundFont) and tsf_free(TinyMidiLoader)
+	// We could call tsf_close(g_TinySoundFont) and tml_free(TinyMidiLoader)
 	// here to free the memory and resources but we just let the OS clean up
 	// because the process ends here.
 	return 0;
