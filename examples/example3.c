@@ -26,19 +26,17 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 		//Loop through all MIDI messages which need to be played up until the current playback time
 		for (g_Msec += SampleBlock * (1000.0 / 44100.0); g_MidiMessage && g_Msec >= g_MidiMessage->time; g_MidiMessage = g_MidiMessage->next)
 		{
-			int Preset;
 			switch (g_MidiMessage->type)
 			{
 				case TML_PROGRAM_CHANGE: //channel program (preset) change
 					if (g_MidiMessage->channel == 9)
 					{
 						//10th MIDI channel uses percussion sound bank (128)
-						Preset = tsf_get_presetindex(g_TinySoundFont, 128, g_MidiMessage->program);
-						if (Preset < 0) Preset = tsf_get_presetindex(g_TinySoundFont, 128, 0);
-						if (Preset < 0) Preset = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
+						if (!tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, g_MidiMessage->program))
+							if (!tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0))
+								tsf_channel_set_presetnumber(g_TinySoundFont, 9, g_MidiMessage->program);
 					}
-					else Preset = tsf_get_presetindex(g_TinySoundFont, 0, g_MidiMessage->program);
-					tsf_channel_set_preset(g_TinySoundFont, g_MidiMessage->channel, (Preset < 0 ? 0 : Preset));
+					else tsf_channel_set_presetnumber(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->program);
 					break;
 				case TML_NOTE_ON: //play a note
 					tsf_channel_note_on(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->key, g_MidiMessage->velocity / 127.0f);
@@ -50,33 +48,7 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 					tsf_channel_set_pitchwheel(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->pitch_bend);
 					break;
 				case TML_CONTROL_CHANGE: //MIDI controller messages
-					switch (g_MidiMessage->control)
-					{
-						#define FLOAT_APPLY_MSB(val, msb) (((((int)(val*16383.5f)) &  0x7f) | (msb << 7)) / 16383.0f)
-						#define FLOAT_APPLY_LSB(val, lsb) (((((int)(val*16383.5f)) & ~0x7f) |  lsb      ) / 16383.0f)
-						case TML_VOLUME_MSB: case TML_EXPRESSION_MSB:
-							tsf_channel_set_volume(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_MSB(tsf_channel_get_volume(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
-							break;
-						case TML_VOLUME_LSB: case TML_EXPRESSION_LSB:
-							tsf_channel_set_volume(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_LSB(tsf_channel_get_volume(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
-							break;
-						case TML_BALANCE_MSB: case TML_PAN_MSB: 
-							tsf_channel_set_pan(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_MSB(tsf_channel_get_pan(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
-							break;
-						case TML_BALANCE_LSB: case TML_PAN_LSB:
-							tsf_channel_set_pan(g_TinySoundFont, g_MidiMessage->channel, FLOAT_APPLY_LSB(tsf_channel_get_pan(g_TinySoundFont, g_MidiMessage->channel), g_MidiMessage->control_value));
-							break;
-						case TML_ALL_SOUND_OFF:
-							tsf_channel_sounds_off_all(g_TinySoundFont, g_MidiMessage->channel);
-							break;
-						case TML_ALL_CTRL_OFF:
-							tsf_channel_set_volume(g_TinySoundFont, g_MidiMessage->channel, 1.0f);
-							tsf_channel_set_pan(g_TinySoundFont, g_MidiMessage->channel, 0.5f);
-							break;
-						case TML_ALL_NOTES_OFF:
-							tsf_channel_note_off_all(g_TinySoundFont, g_MidiMessage->channel);
-							break;
-					}
+					tsf_channel_midi_control(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->control, g_MidiMessage->control_value);
 					break;
 			}
 		}
