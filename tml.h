@@ -15,7 +15,7 @@
 
    LICENSE (ZLIB)
 
-   Copyright (C) 2017 Bernhard Schelling
+   Copyright (C) 2017, 2018 Bernhard Schelling
 
    This software is provided 'as-is', without any express or implied
    warranty.  In no event will the authors be held liable for any damages
@@ -226,7 +226,6 @@ struct tml_tempomsg
 
 struct tml_parser
 {
-	struct tml_stream *stream;
 	unsigned char *buf, *buf_end; 
 	int last_status, message_array_size, message_count;
 };
@@ -336,7 +335,7 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 
 			case TML_PITCH_BEND:
 				if ((param = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
-				evt->pitch_bend = ((evt->key & 0x7f) << 7) | (param & 0x7f);
+				evt->pitch_bend = ((param & 0x7f) << 7) | evt->key;
 				break;
 
 			case TML_PROGRAM_CHANGE:
@@ -361,10 +360,10 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 TMLDEF tml_message* tml_load(struct tml_stream* stream)
 {
 	int num_tracks, division, trackbufsize = 0;
-	unsigned char midi_header[15], *trackbuf = TML_NULL;
+	unsigned char midi_header[14], *trackbuf = TML_NULL;
 	struct tml_message* messages = TML_NULL;
 	struct tml_track *tracks, *t, *tracksEnd;
-	struct tml_parser p = { stream };
+	struct tml_parser p = { TML_NULL, TML_NULL, 0, 0, 0 };
 
 	// Parse MIDI header
 	if (stream->read(stream->data, midi_header, 14) != 14) { TML_ERROR("Unexpected end of file"); return messages; }
