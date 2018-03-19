@@ -363,8 +363,8 @@ static void tsf_hydra_read_shdr(struct tsf_hydra_shdr* i, struct tsf_stream* str
 #undef TSFR
 
 struct tsf_riffchunk { tsf_fourcc id; tsf_u32 size; };
-struct tsf_envelope { float delay, start, attack, hold, decay, sustain, release, keynumToHold, keynumToDecay; };
-struct tsf_voice_envelope { float level, slope; int samplesUntilNextSegment; int segment; struct tsf_envelope parameters; TSF_BOOL segmentIsExponential, exponentialDecay; };
+struct tsf_envelope { float delay, attack, hold, decay, sustain, release, keynumToHold, keynumToDecay; };
+struct tsf_voice_envelope { float level, slope; int samplesUntilNextSegment; short segment, midiVelocity; struct tsf_envelope parameters; TSF_BOOL segmentIsExponential, isAmpEnv; };
 struct tsf_voice_lowpass { double QInv, a0, a1, b1, b2, z1, z2; TSF_BOOL active; };
 struct tsf_voice_lfo { int samplesUntil; float level, delta; };
 
@@ -542,8 +542,8 @@ static void tsf_region_envtosecs(struct tsf_envelope* p, TSF_BOOL sustainIsGain)
 	if (!p->keynumToDecay) p->decay = (p->decay < -11950.0f ? 0.0f : tsf_timecents2Secsf(p->decay));
 	
 	if (p->sustain < 0.0f) p->sustain = 0.0f;
-	else if (sustainIsGain) p->sustain = 100.0f * tsf_decibelsToGain(-p->sustain / 10.0f);
-	else p->sustain = p->sustain / 10.0f;
+	else if (sustainIsGain) p->sustain = tsf_decibelsToGain(-p->sustain / 10.0f);
+	else p->sustain = 1.0f - (p->sustain / 1000.0f);
 }
 
 static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fontSampleCount)
@@ -767,9 +767,14 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int act
 			e->samplesUntilNextSegment = (int)(e->parameters.attack * outSampleRate);
 			if (e->samplesUntilNextSegment > 0)
 			{
+				if (!e->isAmpEnv)
+				{
+					//mod env attack duration scales with velocity (velocity of 1 is full duration, max velocity is 0.125 times duration)
+					e->samplesUntilNextSegment = (int)(e->parameters.attack * ((145 - e->midiVelocity) / 144.0f) * outSampleRate);
+				}
 				e->segment = TSF_SEGMENT_ATTACK;
 				e->segmentIsExponential = TSF_FALSE;
-				e->level = e->parameters.start / 100.0f;
+				e->level = 0.0f;
 				e->slope = 1.0f / e->samplesUntilNextSegment;
 				return;
 			}
@@ -779,8 +784,8 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int act
 			{
 				e->segment = TSF_SEGMENT_HOLD;
 				e->segmentIsExponential = TSF_FALSE;
-				e->level = 1.0;
-				e->slope = 0.0;
+				e->level = 1.0f;
+				e->slope = 0.0f;
 				return;
 			}
 		case TSF_SEGMENT_HOLD:
@@ -788,8 +793,8 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int act
 			if (e->samplesUntilNextSegment > 0)
 			{
 				e->segment = TSF_SEGMENT_DECAY;
-				e->level = 1.0;
-				if (e->exponentialDecay)
+				e->level = 1.0f;
+				if (e->isAmpEnv)
 				{
 					// I don't truly understand this; just following what LinuxSampler does.
 					float mysterySlope = -9.226f / e->samplesUntilNextSegment;
@@ -802,19 +807,20 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int act
 						// get to zero, not to the sustain level.  The SFZ spec is not that
 						// specific about what "decay" means, so perhaps it's really supposed
 						// to specify the time to reach the sustain level.
-						e->samplesUntilNextSegment = (int)(TSF_LOG((e->parameters.sustain / 100.0) / e->level) / mysterySlope);
+						e->samplesUntilNextSegment = (int)(TSF_LOG(e->parameters.sustain) / mysterySlope);
 					}
 				}
 				else
 				{
-					e->slope = (e->parameters.sustain / 100.0f - 1.0f) / e->samplesUntilNextSegment;
+					e->slope = -1.0f / e->samplesUntilNextSegment;
+					e->samplesUntilNextSegment = (int)(e->parameters.decay * (1.0f - e->parameters.sustain) * outSampleRate);
 					e->segmentIsExponential = TSF_FALSE;
 				}
 				return;
 			}
 		case TSF_SEGMENT_DECAY:
 			e->segment = TSF_SEGMENT_SUSTAIN;
-			e->level = e->parameters.sustain / 100.0f;
+			e->level = e->parameters.sustain;
 			e->slope = 0.0f;
 			e->samplesUntilNextSegment = 0x7FFFFFFF;
 			e->segmentIsExponential = TSF_FALSE;
@@ -822,7 +828,7 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int act
 		case TSF_SEGMENT_SUSTAIN:
 			e->segment = TSF_SEGMENT_RELEASE;
 			e->samplesUntilNextSegment = (int)((e->parameters.release <= 0 ? TSF_FASTRELEASETIME : e->parameters.release) * outSampleRate);
-			if (e->exponentialDecay)
+			if (e->isAmpEnv)
 			{
 				// I don't truly understand this; just following what LinuxSampler does.
 				float mysterySlope = -9.226f / e->samplesUntilNextSegment;
@@ -839,12 +845,12 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int act
 		default:
 			e->segment = TSF_SEGMENT_DONE;
 			e->segmentIsExponential = TSF_FALSE;
-			e->level = e->slope = 0;
+			e->level = e->slope = 0.0f;
 			e->samplesUntilNextSegment = 0x7FFFFFF;
 	}
 }
 
-static void tsf_voice_envelope_setup(struct tsf_voice_envelope* e, struct tsf_envelope* new_parameters, int midiNoteNumber, TSF_BOOL setExponentialDecay, float outSampleRate)
+static void tsf_voice_envelope_setup(struct tsf_voice_envelope* e, struct tsf_envelope* new_parameters, int midiNoteNumber, short midiVelocity, TSF_BOOL isAmpEnv, float outSampleRate)
 {
 	e->parameters = *new_parameters;
 	if (e->parameters.keynumToHold)
@@ -857,7 +863,8 @@ static void tsf_voice_envelope_setup(struct tsf_voice_envelope* e, struct tsf_en
 		e->parameters.decay += e->parameters.keynumToDecay * (60.0f - midiNoteNumber);
 		e->parameters.decay = (e->parameters.decay < -10000.0f ? 0.0f : tsf_timecents2Secsf(e->parameters.decay));
 	}
-	e->exponentialDecay = setExponentialDecay; 
+	e->midiVelocity = midiVelocity;
+	e->isAmpEnv = isAmpEnv;
 	tsf_voice_envelope_nextsegment(e, TSF_SEGMENT_NONE, outSampleRate);
 }
 
@@ -1272,8 +1279,8 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		voice->loopEnd = (doLoop ? region->loop_end : 0);
 
 		// Setup envelopes.
-		tsf_voice_envelope_setup(&voice->ampenv, &region->ampenv, key, TSF_TRUE, f->outSampleRate);
-		tsf_voice_envelope_setup(&voice->modenv, &region->modenv, key, TSF_FALSE, f->outSampleRate);
+		tsf_voice_envelope_setup(&voice->ampenv, &region->ampenv, key, midiVelocity, TSF_TRUE, f->outSampleRate);
+		tsf_voice_envelope_setup(&voice->modenv, &region->modenv, key, midiVelocity, TSF_FALSE, f->outSampleRate);
 
 		// Setup lowpass filter.
 		filterQDB = region->initialFilterQ / 10.0f;
