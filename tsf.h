@@ -158,10 +158,11 @@ TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing
 TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing CPP_DEFAULT0);
 
 // Higher level channel based functions, set up channel parameters
-//   preset_index: preset index >= 0 and < tsf_get_presetcount()
-//   bank: instrument bank number (alternative to preset_index)
-//   preset_number: preset number (alternative to preset_index)
 //   channel: channel number
+//   preset_index: preset index >= 0 and < tsf_get_presetcount()
+//   preset_number: preset number (alternative to preset_index)
+//   flag_mididrums: 0 for normal channels, otherwise apply MIDI drum channel rules
+//   bank: instrument bank number (alternative to preset_index)
 //   pan: stereo panning value from 0.0 (left) to 1.0 (right) (default 0.5 center)
 //   volume: linear volume scale factor (default 1.0 full)
 //   pitch_wheel: pitch wheel position 0 to 16383 (default 8192 unpitched)
@@ -169,7 +170,7 @@ TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing
 //   tuning: tuning of all playing voices in semitones (default 0.0 standard (A440) tuning)
 //   (set_preset_number and set_bank_preset return 0 if preset does not exist, otherwise 1)
 TSFDEF void tsf_channel_set_presetindex(tsf* f, int channel, int preset_index);
-TSFDEF int  tsf_channel_set_presetnumber(tsf* f, int channel, int preset_number);
+TSFDEF int  tsf_channel_set_presetnumber(tsf* f, int channel, int preset_number, int flag_mididrums CPP_DEFAULT0);
 TSFDEF void tsf_channel_set_bank(tsf* f, int channel, int bank);
 TSFDEF int  tsf_channel_set_bank_preset(tsf* f, int channel, int bank, int preset_number);
 TSFDEF void tsf_channel_set_pan(tsf* f, int channel, float pan);
@@ -1434,10 +1435,18 @@ TSFDEF void tsf_channel_set_presetindex(tsf* f, int channel, int preset_index)
 	tsf_channel_init(f, channel)->presetIndex = (unsigned short)preset_index;
 }
 
-TSFDEF int tsf_channel_set_presetnumber(tsf* f, int channel, int preset_number)
+TSFDEF int tsf_channel_set_presetnumber(tsf* f, int channel, int preset_number, int flag_mididrums)
 {
 	struct tsf_channel *c = tsf_channel_init(f, channel);
-	int preset_index = tsf_get_presetindex(f, c->bank, preset_number);
+	int preset_index;
+	if (flag_mididrums)
+	{
+		preset_index = tsf_get_presetindex(f, 128 | (c->bank & 0x7FFF), preset_number);
+		if (preset_index == -1) preset_index = tsf_get_presetindex(f, 128, preset_number);
+		if (preset_index == -1) preset_index = tsf_get_presetindex(f, 128, 0);
+		if (preset_index == -1) preset_index = tsf_get_presetindex(f, (c->bank & 0x7FFF), preset_number);
+	}
+	else preset_index = tsf_get_presetindex(f, (c->bank & 0x7FFF), preset_number);
 	if (preset_index == -1) preset_index = tsf_get_presetindex(f, 0, preset_number);
 	if (preset_index != -1) { c->presetIndex = preset_index; return 1; }
 	return 0;
@@ -1561,10 +1570,10 @@ TSFDEF void tsf_channel_midi_control(tsf* f, int channel, int controller, int co
 		case  43 /*EXPRESSION_LSB*/  : c->midiExpression = (c->midiExpression & 0x3F80) |  control_value;       goto TCMC_SET_VOLUME;
 		case  10 /*PAN_MSB*/         : c->midiPan        = (c->midiPan        & 0x7F  ) | (control_value << 7); goto TCMC_SET_PAN;
 		case  42 /*PAN_LSB*/         : c->midiPan        = (c->midiPan        & 0x3F80) |  control_value;       goto TCMC_SET_PAN;
-		case   0 /*BANK_SELECT_MSB*/ : c->bank           = (c->bank           & 0x7F  ) | (control_value << 7); return;
-		case  32 /*BANK_SELECT_LSB*/ : c->bank           = (c->bank           & 0x3F80) |  control_value;       return;
 		case   6 /*DATA_ENTRY_MSB*/  : c->midiData       = (c->midiData       & 0x7F)   | (control_value << 7); goto TCMC_SET_DATA;
 		case  38 /*DATA_ENTRY_LSB*/  : c->midiData       = (c->midiData       & 0x3F80) |  control_value;       goto TCMC_SET_DATA;
+		case   0 /*BANK_SELECT_MSB*/ : c->bank = 0x8000 | control_value; return; //bank select MSB alone acts like LSB
+		case  32 /*BANK_SELECT_LSB*/ : c->bank = (c->bank & 0x8000 ? ((c->bank & 0x7F) << 7) : 0) | control_value; return;
 		case 101 /*RPN_MSB*/         : c->midiRPN = ((c->midiRPN == 0xFFFF ? 0 : c->midiRPN) & 0x7F  ) | (control_value << 7); return;
 		case 100 /*RPN_LSB*/         : c->midiRPN = ((c->midiRPN == 0xFFFF ? 0 : c->midiRPN) & 0x3F80) |  control_value;       return;
 		case  98 /*NRPN_LSB*/        : c->midiRPN = 0xFFFF; return;
@@ -1582,7 +1591,8 @@ TSFDEF void tsf_channel_midi_control(tsf* f, int channel, int controller, int co
 	}
 	return;
 TCMC_SET_VOLUME:
-	tsf_channel_set_volume(f, channel, c->midiVolume / 16383.0f * c->midiExpression / 16383.0f);
+	//Raising to the power of 3 seems to result in a decent sounding volume curve for MIDI
+	tsf_channel_set_volume(f, channel, TSF_POWF((c->midiVolume / 16383.0f) * (c->midiExpression / 16383.0f), 3.0f));
 	return;
 TCMC_SET_PAN:
 	tsf_channel_set_pan(f, channel, c->midiPan / 16383.0f);
@@ -1601,7 +1611,7 @@ TSFDEF int tsf_channel_get_preset_index(tsf* f, int channel)
 
 TSFDEF int tsf_channel_get_preset_bank(tsf* f, int channel)
 {
-	return (f->channels && channel < f->channels->channelNum ? f->channels->channels[channel].bank : 0);
+	return (f->channels && channel < f->channels->channelNum ? (f->channels->channels[channel].bank & 0x7FFF) : 0);
 }
 
 TSFDEF int tsf_channel_get_preset_number(tsf* f, int channel)

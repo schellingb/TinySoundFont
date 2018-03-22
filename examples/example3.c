@@ -28,15 +28,8 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 		{
 			switch (g_MidiMessage->type)
 			{
-				case TML_PROGRAM_CHANGE: //channel program (preset) change
-					if (g_MidiMessage->channel == 9)
-					{
-						//10th MIDI channel uses percussion sound bank (128)
-						if (!tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, g_MidiMessage->program))
-							if (!tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0))
-								tsf_channel_set_presetnumber(g_TinySoundFont, 9, g_MidiMessage->program);
-					}
-					else tsf_channel_set_presetnumber(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->program);
+				case TML_PROGRAM_CHANGE: //channel program (preset) change (special handling for 10th MIDI channel with drums)
+					tsf_channel_set_presetnumber(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->program, (g_MidiMessage->channel == 9));
 					break;
 				case TML_NOTE_ON: //play a note
 					tsf_channel_note_on(g_TinySoundFont, g_MidiMessage->channel, g_MidiMessage->key, g_MidiMessage->velocity / 127.0f);
