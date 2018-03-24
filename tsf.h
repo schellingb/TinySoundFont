@@ -515,7 +515,7 @@ static void tsf_region_operator(struct tsf_region* region, tsf_u16 genOper, unio
 		case KeyRange:                   region->lokey = amount->range.lo; region->hikey = amount->range.hi; break;
 		case VelRange:                   region->lovel = amount->range.lo; region->hivel = amount->range.hi; break;
 		case StartloopAddrsCoarseOffset: region->loop_start += amount->shortAmount * 32768; break;
-		case InitialAttenuation:         region->volume += -amount->shortAmount / 100.0f; break;
+		case InitialAttenuation:         region->volume += amount->shortAmount / 100.0f; break;
 		case EndloopAddrsCoarseOffset:   region->loop_end += amount->shortAmount * 32768; break;
 		case CoarseTune:                 region->transpose += amount->shortAmount; break;
 		case FineTune:                   region->tune += amount->shortAmount; break;
@@ -558,6 +558,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 		struct tsf_hydra_phdr *otherphdr;
 		struct tsf_preset* preset;
 		struct tsf_hydra_pbag *ppbag, *ppbagEnd;
+		struct tsf_region globalRegion;
 		for (otherphdr = hydra->phdrs; otherphdr != pphdrMax; otherphdr++)
 		{
 			if (otherphdr == pphdr || otherphdr->bank > pphdr->bank) continue;
@@ -600,14 +601,14 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 		}
 
 		preset->regions = (struct tsf_region*)TSF_MALLOC(preset->regionNum * sizeof(struct tsf_region));
+		tsf_region_clear(&globalRegion, TSF_TRUE);
 
 		// Zones.
-		//*** TODO: Handle global zone (modulators only).
 		for (ppbag = hydra->pbags + pphdr->presetBagNdx, ppbagEnd = hydra->pbags + pphdr[1].presetBagNdx; ppbag != ppbagEnd; ppbag++)
 		{
 			struct tsf_hydra_pgen *ppgen, *ppgenEnd; struct tsf_hydra_inst *pinst; struct tsf_hydra_ibag *pibag, *pibagEnd; struct tsf_hydra_igen *pigen, *pigenEnd;
-			struct tsf_region presetRegion;
-			tsf_region_clear(&presetRegion, TSF_TRUE);
+			struct tsf_region presetRegion = globalRegion;
+			int hadGenInstrument = 0;
 
 			// Generators.
 			for (ppgen = hydra->pgens + ppbag->genNdx, ppgenEnd = hydra->pgens + ppbag[1].genNdx; ppgen != ppgenEnd; ppgen++)
@@ -700,13 +701,6 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 								if (zoneRegion.end && zoneRegion.end < fontSampleCount) zoneRegion.end++;
 								else zoneRegion.end = fontSampleCount;
 
-								// Pin initialAttenuation to max +6dB.
-								if (zoneRegion.volume > 6.0f)
-								{
-									zoneRegion.volume = 6.0f;
-									//addUnsupportedOpcode("extreme gain in initialAttenuation");
-								}
-
 								preset->regions[region_index] = zoneRegion;
 								region_index++;
 								hadSampleID = 1;
@@ -721,12 +715,17 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 						// Modulators (TODO)
 						//if (ibag->instModNdx < ibag[1].instModNdx) addUnsupportedOpcode("any modulator");
 					}
+					hadGenInstrument = 1;
 				}
 				else tsf_region_operator(&presetRegion, ppgen->genOper, &ppgen->genAmount);
 			}
 
 			// Modulators (TODO)
 			//if (pbag->modNdx < pbag[1].modNdx) addUnsupportedOpcode("any modulator");
+
+			// Handle preset's global zone.
+			if (ppbag == hydra->pbags + pphdr->presetBagNdx && !hadGenInstrument)
+				globalRegion = presetRegion;
 		}
 	}
 }
@@ -750,7 +749,7 @@ static void tsf_load_samples(float** fontSamples, unsigned int* fontSampleCount,
 	}
 }
 
-static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, int active_segment, float outSampleRate)
+static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short active_segment, float outSampleRate)
 {
 	switch (active_segment)
 	{
@@ -1257,7 +1256,7 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		voice->playingPreset = preset_index;
 		voice->playingKey = key;
 		voice->playIndex = voicePlayIndex;
-		voice->noteGainDB = f->globalGainDB + region->volume - tsf_gainToDecibels(1.0f / vel);
+		voice->noteGainDB = f->globalGainDB - region->volume - tsf_gainToDecibels(1.0f / vel);
 
 		if (f->channels)
 		{
