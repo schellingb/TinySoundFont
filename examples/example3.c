@@ -94,8 +94,8 @@ int main(int argc, char *argv[])
 	//Initialize preset on special 10th MIDI channel to use percussion sound bank (128) if available
 	tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0);
 
-	// Set the SoundFont rendering output mode with -18 db volume gain
-	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, -18.0f);
+	// Set the SoundFont rendering output mode
+	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, 0.0f);
 
 	// Request the desired audio output format
 	if (SDL_OpenAudio(&OutputAudioSpec, TSF_NULL) < 0)

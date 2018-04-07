@@ -166,8 +166,8 @@ TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing
 //   pan: stereo panning value from 0.0 (left) to 1.0 (right) (default 0.5 center)
 //   volume: linear volume scale factor (default 1.0 full)
 //   pitch_wheel: pitch wheel position 0 to 16383 (default 8192 unpitched)
-//   pitch_range: range of the pitch wheel in semitones (default 2.0)
-//   tuning: tuning of all playing voices in semitones (default 0.0 standard (A440) tuning)
+//   pitch_range: range of the pitch wheel in semitones (default 2.0, total +/- 2 semitones)
+//   tuning: tuning of all playing voices in semitones (default 0.0, standard (A440) tuning)
 //   (set_preset_number and set_bank_preset return 0 if preset does not exist, otherwise 1)
 TSFDEF void tsf_channel_set_presetindex(tsf* f, int channel, int preset_index);
 TSFDEF int  tsf_channel_set_presetnumber(tsf* f, int channel, int preset_number, int flag_mididrums CPP_DEFAULT0);
@@ -195,9 +195,11 @@ TSFDEF void tsf_channel_midi_control(tsf* f, int channel, int controller, int co
 TSFDEF int tsf_channel_get_preset_index(tsf* f, int channel);
 TSFDEF int tsf_channel_get_preset_bank(tsf* f, int channel);
 TSFDEF int tsf_channel_get_preset_number(tsf* f, int channel);
-TSFDEF int tsf_channel_get_pitchwheel(tsf* f, int channel);
 TSFDEF float tsf_channel_get_pan(tsf* f, int channel);
 TSFDEF float tsf_channel_get_volume(tsf* f, int channel);
+TSFDEF int tsf_channel_get_pitchwheel(tsf* f, int channel);
+TSFDEF float tsf_channel_get_pitchrange(tsf* f, int channel);
+TSFDEF float tsf_channel_get_tuning(tsf* f, int channel);
 
 #ifdef __cplusplus
 #  undef CPP_DEFAULT0
@@ -376,7 +378,7 @@ struct tsf_region
 	unsigned char lokey, hikey, lovel, hivel;
 	unsigned int group, offset, end, loop_start, loop_end;
 	int transpose, tune, pitch_keycenter, pitch_keytrack;
-	float volume, pan;
+	float attenuation, pan;
 	struct tsf_envelope ampenv, modenv;
 	int initialFilterQ, initialFilterFc;
 	int modEnvToPitch, modEnvToFilterFc, modLfoToFilterFc, modLfoToVolume;
@@ -515,7 +517,7 @@ static void tsf_region_operator(struct tsf_region* region, tsf_u16 genOper, unio
 		case KeyRange:                   region->lokey = amount->range.lo; region->hikey = amount->range.hi; break;
 		case VelRange:                   region->lovel = amount->range.lo; region->hivel = amount->range.hi; break;
 		case StartloopAddrsCoarseOffset: region->loop_start += amount->shortAmount * 32768; break;
-		case InitialAttenuation:         region->volume += amount->shortAmount / 100.0f; break;
+		case InitialAttenuation:         region->attenuation += amount->shortAmount * 0.1f; break;
 		case EndloopAddrsCoarseOffset:   region->loop_end += amount->shortAmount * 32768; break;
 		case CoarseTune:                 region->transpose += amount->shortAmount; break;
 		case FineTune:                   region->tune += amount->shortAmount; break;
@@ -649,7 +651,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 								zoneRegion.transpose += presetRegion.transpose;
 								zoneRegion.tune += presetRegion.tune;
 								zoneRegion.pitch_keytrack += presetRegion.pitch_keytrack;
-								zoneRegion.volume += presetRegion.volume;
+								zoneRegion.attenuation += presetRegion.attenuation;
 								zoneRegion.pan += presetRegion.pan;
 								zoneRegion.ampenv.delay += presetRegion.ampenv.delay;
 								zoneRegion.ampenv.attack += presetRegion.ampenv.attack;
@@ -1256,7 +1258,7 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		voice->playingPreset = preset_index;
 		voice->playingKey = key;
 		voice->playIndex = voicePlayIndex;
-		voice->noteGainDB = f->globalGainDB - region->volume - tsf_gainToDecibels(1.0f / vel);
+		voice->noteGainDB = f->globalGainDB - region->attenuation - tsf_gainToDecibels(1.0f / vel);
 
 		if (f->channels)
 		{
@@ -1465,29 +1467,6 @@ TSFDEF int tsf_channel_set_bank_preset(tsf* f, int channel, int bank, int preset
 	c->bank = bank;
 	return 1;
 }
-TSFDEF void tsf_channel_set_pitchwheel(tsf* f, int channel, int pitch_wheel)
-{
-	struct tsf_channel *c = tsf_channel_init(f, channel);
-	if (c->pitchWheel == pitch_wheel) return;
-	c->pitchWheel = pitch_wheel;
-	tsf_channel_applypitch(f, channel, c);
-}
-
-TSFDEF void tsf_channel_set_pitchrange(tsf* f, int channel, float pitch_range)
-{
-	struct tsf_channel *c = tsf_channel_init(f, channel);
-	if (c->pitchRange == pitch_range) return;
-	c->pitchRange = pitch_range;
-	if (c->pitchWheel != 8192) tsf_channel_applypitch(f, channel, c);
-}
-
-TSFDEF void tsf_channel_set_tuning(tsf* f, int channel, float tuning)
-{
-	struct tsf_channel *c = tsf_channel_init(f, channel);
-	if (c->tuning == tuning) return;
-	c->tuning = tuning;
-	tsf_channel_applypitch(f, channel, c);
-}
 
 TSFDEF void tsf_channel_set_pan(tsf* f, int channel, float pan)
 {
@@ -1513,6 +1492,30 @@ TSFDEF void tsf_channel_set_volume(tsf* f, int channel, float volume)
 		if (v->playingChannel == channel && v->playingPreset != -1)
 			v->noteGainDB += gainDBChange;
 	c->gainDB = gainDB;
+}
+
+TSFDEF void tsf_channel_set_pitchwheel(tsf* f, int channel, int pitch_wheel)
+{
+	struct tsf_channel *c = tsf_channel_init(f, channel);
+	if (c->pitchWheel == pitch_wheel) return;
+	c->pitchWheel = pitch_wheel;
+	tsf_channel_applypitch(f, channel, c);
+}
+
+TSFDEF void tsf_channel_set_pitchrange(tsf* f, int channel, float pitch_range)
+{
+	struct tsf_channel *c = tsf_channel_init(f, channel);
+	if (c->pitchRange == pitch_range) return;
+	c->pitchRange = pitch_range;
+	if (c->pitchWheel != 8192) tsf_channel_applypitch(f, channel, c);
+}
+
+TSFDEF void tsf_channel_set_tuning(tsf* f, int channel, float tuning)
+{
+	struct tsf_channel *c = tsf_channel_init(f, channel);
+	if (c->tuning == tuning) return;
+	c->tuning = tuning;
+	tsf_channel_applypitch(f, channel, c);
 }
 
 TSFDEF void tsf_channel_note_on(tsf* f, int channel, int key, float vel)
@@ -1597,7 +1600,7 @@ TCMC_SET_PAN:
 	tsf_channel_set_pan(f, channel, c->midiPan / 16383.0f);
 	return;
 TCMC_SET_DATA:
-	if      (c->midiRPN == 0) tsf_channel_set_pitchrange(f, channel, (c->midiData >> 8) + 0.01f * (c->midiData & 0x7F));
+	if      (c->midiRPN == 0) tsf_channel_set_pitchrange(f, channel, (c->midiData >> 7) + 0.01f * (c->midiData & 0x7F));
 	else if (c->midiRPN == 1) tsf_channel_set_tuning(f, channel, (int)c->tuning + ((float)c->midiData - 8192.0f) / 8192.0f); //fine tune
 	else if (c->midiRPN == 2 && controller == 6) tsf_channel_set_tuning(f, channel, ((float)control_value - 64.0f) + (c->tuning - (int)c->tuning)); //coarse tune
 	return;
@@ -1618,11 +1621,6 @@ TSFDEF int tsf_channel_get_preset_number(tsf* f, int channel)
 	return (f->channels && channel < f->channels->channelNum ? f->presets[f->channels->channels[channel].presetIndex].preset : 0);
 }
 
-TSFDEF int tsf_channel_get_pitchwheel(tsf* f, int channel)
-{
-	return (f->channels && channel < f->channels->channelNum ? f->channels->channels[channel].pitchWheel : 8192);
-}
-
 TSFDEF float tsf_channel_get_pan(tsf* f, int channel)
 {
 	return (f->channels && channel < f->channels->channelNum ? f->channels->channels[channel].panOffset - 0.5f : 0.5f);
@@ -1631,6 +1629,21 @@ TSFDEF float tsf_channel_get_pan(tsf* f, int channel)
 TSFDEF float tsf_channel_get_volume(tsf* f, int channel)
 {
 	return (f->channels && channel < f->channels->channelNum ? tsf_decibelsToGain(f->channels->channels[channel].gainDB) : 1.0f);
+}
+
+TSFDEF int tsf_channel_get_pitchwheel(tsf* f, int channel)
+{
+	return (f->channels && channel < f->channels->channelNum ? f->channels->channels[channel].pitchWheel : 8192);
+}
+
+TSFDEF float tsf_channel_get_pitchrange(tsf* f, int channel)
+{
+	return (f->channels && channel < f->channels->channelNum ? f->channels->channels[channel].pitchRange : 2.0f);
+}
+
+TSFDEF float tsf_channel_get_tuning(tsf* f, int channel)
+{
+	return (f->channels && channel < f->channels->channelNum ? f->channels->channels[channel].tuning : 0.0f);
 }
 
 #ifdef __cplusplus
