@@ -1307,7 +1307,7 @@ TSFDEF int tsf_bank_note_on(tsf* f, int bank, int preset_number, int key, float 
 
 TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast;
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching preset, key and look up the smallest play index
