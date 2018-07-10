@@ -135,7 +135,7 @@ struct tml_stream
 
 // Generic Midi loading method using the stream structure above
 TMLDEF tml_message* tml_load(struct tml_stream* stream);
-TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream) { return tml_load((struct tml_stream*)stream); }
+TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream);
 
 #ifdef __cplusplus
 }
@@ -457,6 +457,11 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	}
 
 	return messages;
+}
+
+TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream)
+{
+	return tml_load((struct tml_stream*)stream);
 }
 
 TMLDEF int tml_get_info(tml_message* Msg, int* out_used_channels, int* out_used_programs, int* out_total_notes, unsigned int* out_time_first_note, unsigned int* out_time_length)
