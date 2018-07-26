@@ -238,12 +238,12 @@ enum TMLSystemType
 	TML_SYNC  = 0xf8, TML_TICK      = 0xf9, TML_START         = 0xfa, TML_CONTINUE       = 0xfb, TML_STOP          = 0xfc, TML_ACTIVE_SENSING  = 0xfe, TML_SYSTEM_RESET = 0xff
 };
 
-int tml_readbyte(struct tml_parser* p)
+static int tml_readbyte(struct tml_parser* p)
 {
 	return (p->buf == p->buf_end ? -1 : *(p->buf++));
 }
 
-int tml_readvariablelength(struct tml_parser* p)
+static int tml_readvariablelength(struct tml_parser* p)
 {
 	unsigned int res = 0, i = 0;
 	unsigned char c;
