@@ -159,6 +159,10 @@ TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream);
 #  define TML_MEMCPY  memcpy
 #endif
 
+#ifndef TML_NO_STDIO
+#  include <stdio.h>
+#endif
+
 #define TML_NULL 0
 
 ////crash on errors and warnings to find broken midi files while debugging
