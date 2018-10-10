@@ -1527,7 +1527,7 @@ TSFDEF void tsf_channel_note_on(tsf* f, int channel, int key, float vel)
 
 TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast;
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching channel, key and look up the smallest play index
