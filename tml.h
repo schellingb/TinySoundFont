@@ -52,7 +52,7 @@ extern "C" {
 // Channel message type
 enum TMLMessageType
 {
-	TML_NOTE_OFF = 0x80, TML_NOTE_ON = 0x90, TML_KEY_PRESSURE = 0xA0, TML_CONTROL_CHANGE = 0xB0, TML_PROGRAM_CHANGE = 0xC0, TML_CHANNEL_PRESSURE = 0xD0, TML_PITCH_BEND = 0xE0
+	TML_NOTE_OFF = 0x80, TML_NOTE_ON = 0x90, TML_KEY_PRESSURE = 0xA0, TML_CONTROL_CHANGE = 0xB0, TML_PROGRAM_CHANGE = 0xC0, TML_CHANNEL_PRESSURE = 0xD0, TML_PITCH_BEND = 0xE0, TML_SET_TEMPO = 0x51
 };
 
 // Midi controller numbers
@@ -119,6 +119,9 @@ TMLDEF tml_message* tml_load_memory(const void* buffer, int size);
 //   time_first_note: Will be set to the time of the first note on message
 //   time_length:     Will be set to the total time in milliseconds
 TMLDEF int tml_get_info(tml_message* first_message, int* used_channels, int* used_programs, int* total_notes, unsigned int* time_first_note, unsigned int* time_length);
+
+// Read the tempo (microseconds per quarter note) value from a message with the type TML_SET_TEMPO
+TMLDEF int tml_get_tempo_value(tml_message* set_tempo_message);
 
 // Free all the memory of the linked message list (can also call free() manually)
 TMLDEF void tml_free(tml_message* f);
@@ -236,10 +239,10 @@ struct tml_parser
 
 enum TMLSystemType
 {
-	TML_TEXT  = 0x01, TML_COPYRIGHT = 0x02, TML_TRACK_NAME    = 0x03, TML_INST_NAME      = 0x04, TML_LYRIC         = 0x05, TML_MARKER          = 0x06, TML_CUE_POINT    = 0x07,
-	TML_EOT   = 0x2f, TML_SET_TEMPO = 0x51, TML_SMPTE_OFFSET  = 0x54, TML_TIME_SIGNATURE = 0x58, TML_KEY_SIGNATURE = 0x59, TML_SEQUENCER_EVENT = 0x7f,
-	TML_SYSEX = 0xf0, TML_TIME_CODE = 0xf1, TML_SONG_POSITION = 0xf2, TML_SONG_SELECT    = 0xf3, TML_TUNE_REQUEST  = 0xf6, TML_EOX             = 0xf7,
-	TML_SYNC  = 0xf8, TML_TICK      = 0xf9, TML_START         = 0xfa, TML_CONTINUE       = 0xfb, TML_STOP          = 0xfc, TML_ACTIVE_SENSING  = 0xfe, TML_SYSTEM_RESET = 0xff
+	TML_TEXT  = 0x01, TML_COPYRIGHT    = 0x02, TML_TRACK_NAME     = 0x03, TML_INST_NAME     = 0x04, TML_LYRIC           = 0x05, TML_MARKER       = 0x06, TML_CUE_POINT = 0x07,
+	TML_EOT   = 0x2f, TML_SMPTE_OFFSET = 0x54, TML_TIME_SIGNATURE = 0x58, TML_KEY_SIGNATURE = 0x59, TML_SEQUENCER_EVENT = 0x7f,
+	TML_SYSEX = 0xf0, TML_TIME_CODE    = 0xf1, TML_SONG_POSITION  = 0xf2, TML_SONG_SELECT   = 0xf3, TML_TUNE_REQUEST    = 0xf6, TML_EOX          = 0xf7, TML_SYNC      = 0xf8,
+	TML_TICK  = 0xf9, TML_START        = 0xfa, TML_CONTINUE       = 0xfb, TML_STOP          = 0xfc, TML_ACTIVE_SENSING  = 0xfe, TML_SYSTEM_RESET = 0xff
 };
 
 static int tml_readbyte(struct tml_parser* p)
@@ -435,7 +438,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 						tempo_msec = msec;
 						tempo_ticks = ticks;
 					}
-					else if (Msg->type)
+					if (Msg->type)
 					{
 						Msg->time = msec;
 						if (PrevMessage) { PrevMessage->next = Msg; PrevMessage = Msg; }
@@ -489,6 +492,14 @@ TMLDEF int tml_get_info(tml_message* Msg, int* out_used_channels, int* out_used_
 	if (out_time_first_note) *out_time_first_note = time_first_note;
 	if (out_time_length    ) *out_time_length     = time_length;
 	return total_notes;
+}
+
+TMLDEF int tml_get_tempo_value(tml_message* msg)
+{
+	unsigned char* Tempo;
+	if (!msg || msg->type != TML_SET_TEMPO) return 0;
+	Tempo = ((struct tml_tempomsg*)msg)->Tempo;
+	return ((Tempo[0]<<16)|(Tempo[1]<<8)|Tempo[2]);
 }
 
 TMLDEF void tml_free(tml_message* f)
