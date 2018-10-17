@@ -415,7 +415,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 		tml_message *PrevMessage = TML_NULL, *Msg, *MsgEnd, Swap;
 		unsigned int ticks = 0, tempo_ticks = 0; //tick counter and value at last tempo change
 		int step_smallest, msec, tempo_msec = 0; //msec value at last tempo change
-		double ticks2time = 480000 / (1000.0 * division); //milliseconds per tick
+		double ticks2time = 500000 / (1000.0 * division); //milliseconds per tick
 
 		// Loop through all messages over all tracks ordered by time
 		for (step_smallest = 0; step_smallest != 0x7fffffff; ticks += step_smallest)
