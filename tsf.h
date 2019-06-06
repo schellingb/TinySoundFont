@@ -766,8 +766,9 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short a
 				e->segmentIsExponential = TSF_FALSE;
 				e->level = 0.0;
 				e->slope = 0.0;
+				return;
 			}
-			break;
+			/* fall through */
 		case TSF_SEGMENT_DELAY:
 			e->samplesUntilNextSegment = (int)(e->parameters.attack * outSampleRate);
 			if (e->samplesUntilNextSegment > 0)
@@ -781,8 +782,9 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short a
 				e->segmentIsExponential = TSF_FALSE;
 				e->level = 0.0f;
 				e->slope = 1.0f / e->samplesUntilNextSegment;
+				return;
 			}
-			break;
+			/* fall through */
 		case TSF_SEGMENT_ATTACK:
 			e->samplesUntilNextSegment = (int)(e->parameters.hold * outSampleRate);
 			if (e->samplesUntilNextSegment > 0)
@@ -791,8 +793,9 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short a
 				e->segmentIsExponential = TSF_FALSE;
 				e->level = 1.0f;
 				e->slope = 0.0f;
+				return;
 			}
-			break;
+			/* fall through */
 		case TSF_SEGMENT_HOLD:
 			e->samplesUntilNextSegment = (int)(e->parameters.decay * outSampleRate);
 			if (e->samplesUntilNextSegment > 0)
@@ -821,15 +824,16 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short a
 					e->samplesUntilNextSegment = (int)(e->parameters.decay * (1.0f - e->parameters.sustain) * outSampleRate);
 					e->segmentIsExponential = TSF_FALSE;
 				}
+				return;
 			}
-			break;
+			/* fall through */
 		case TSF_SEGMENT_DECAY:
 			e->segment = TSF_SEGMENT_SUSTAIN;
 			e->level = e->parameters.sustain;
 			e->slope = 0.0f;
 			e->samplesUntilNextSegment = 0x7FFFFFFF;
 			e->segmentIsExponential = TSF_FALSE;
-			break;
+			return;
 		case TSF_SEGMENT_SUSTAIN:
 			e->segment = TSF_SEGMENT_RELEASE;
 			e->samplesUntilNextSegment = (int)((e->parameters.release <= 0 ? TSF_FASTRELEASETIME : e->parameters.release) * outSampleRate);
@@ -845,14 +849,13 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short a
 				e->slope = -e->level / e->samplesUntilNextSegment;
 				e->segmentIsExponential = TSF_FALSE;
 			}
-			break;
+			return;
 		case TSF_SEGMENT_RELEASE:
 		default:
 			e->segment = TSF_SEGMENT_DONE;
 			e->segmentIsExponential = TSF_FALSE;
 			e->level = e->slope = 0.0f;
 			e->samplesUntilNextSegment = 0x7FFFFFF;
-			break;
 	}
 }
 
