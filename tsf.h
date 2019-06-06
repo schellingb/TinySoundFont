@@ -852,6 +852,7 @@ static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short a
 			e->segmentIsExponential = TSF_FALSE;
 			e->level = e->slope = 0.0f;
 			e->samplesUntilNextSegment = 0x7FFFFFF;
+			break;
 	}
 }
 
