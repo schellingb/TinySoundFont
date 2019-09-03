@@ -146,7 +146,7 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key);
 TSFDEF int  tsf_bank_note_off(tsf* f, int bank, int preset_number, int key);
 
 // Stop playing all notes (end with sustain and release)
-TSFDEF void tsf_note_off_all(tsf* f);
+TSFDEF void tsf_note_off_all(tsf* f, int quick);
 
 // Returns the number of active voices
 TSFDEF int tsf_active_voice_count(tsf* f);
@@ -546,7 +546,7 @@ static void tsf_region_envtosecs(struct tsf_envelope* p, TSF_BOOL sustainIsGain)
 	// to keep the values in timecents so we can calculate it during startNote
 	if (!p->keynumToHold)  p->hold  = (p->hold  < -11950.0f ? 0.0f : tsf_timecents2Secsf(p->hold));
 	if (!p->keynumToDecay) p->decay = (p->decay < -11950.0f ? 0.0f : tsf_timecents2Secsf(p->decay));
-	
+
 	if (p->sustain < 0.0f) p->sustain = 0.0f;
 	else if (sustainIsGain) p->sustain = tsf_decibelsToGain(-p->sustain / 10.0f);
 	else p->sustain = 1.0f - (p->sustain / 1000.0f);
@@ -1340,11 +1340,19 @@ TSFDEF int tsf_bank_note_off(tsf* f, int bank, int preset_number, int key)
 	return 1;
 }
 
-TSFDEF void tsf_note_off_all(tsf* f)
+TSFDEF void tsf_note_off_all(tsf* f, int quick)
 {
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
-	for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
-		tsf_voice_end(v, f->outSampleRate);
+	if (quick)
+	{
+		for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
+			tsf_voice_endquick(v, f->outSampleRate);
+	}
+	else
+	{
+		for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
+			tsf_voice_end(v, f->outSampleRate);
+	}
 }
 
 TSFDEF int tsf_active_voice_count(tsf* f)
@@ -1370,7 +1378,7 @@ TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing
 	tsf_render_float(f, f->outputSamples, samples, TSF_FALSE);
 
 	floatSamples = f->outputSamples;
-	if (flag_mixing) 
+	if (flag_mixing)
 		while (buffer != bufferEnd)
 		{
 			float v = *floatSamples++;
