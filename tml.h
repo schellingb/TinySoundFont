@@ -15,7 +15,7 @@
 
    LICENSE (ZLIB)
 
-   Copyright (C) 2017, 2018 Bernhard Schelling
+   Copyright (C) 2017, 2018, 2020 Bernhard Schelling
 
    This software is provided 'as-is', without any express or implied
    warranty.  In no event will the authors be held liable for any damages
@@ -138,6 +138,9 @@ struct tml_stream
 
 // Generic Midi loading method using the stream structure above
 TMLDEF tml_message* tml_load(struct tml_stream* stream);
+
+// If this library is used together with TinySoundFont, tsf_stream (equivalent to tml_stream) can also be used
+struct tsf_stream;
 TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream);
 
 #ifdef __cplusplus
