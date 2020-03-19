@@ -693,6 +693,8 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 								if (zoneRegion.pan < -0.5f) zoneRegion.pan = -0.5f;
 								else if (zoneRegion.pan > 0.5f) zoneRegion.pan = 0.5f;
 								if (zoneRegion.initialFilterQ < 1500 || zoneRegion.initialFilterQ > 13500) zoneRegion.initialFilterQ = 0;
+								if (zoneRegion.attenuation < 0) zoneRegion.attenuation = 0;
+								else if (zoneRegion.attenuation > 1440) zoneRegion.attenuation = 1440;
 
 								pshdr = &hydra->shdrs[pigen->genAmount.wordAmount];
 								zoneRegion.offset += pshdr->start;
