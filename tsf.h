@@ -468,68 +468,172 @@ static void tsf_region_clear(struct tsf_region* i, TSF_BOOL for_relative)
 	i->delayVibLFO = -12000.0f;
 }
 
-static void tsf_region_operator(struct tsf_region* region, tsf_u16 genOper, union tsf_hydra_genamount* amount)
+static void tsf_region_operator(struct tsf_region* region, tsf_u16 genOper, union tsf_hydra_genamount* amount, struct tsf_region* merge_region)
 {
 	enum
 	{
-		StartAddrsOffset, EndAddrsOffset, StartloopAddrsOffset, EndloopAddrsOffset, StartAddrsCoarseOffset, ModLfoToPitch, VibLfoToPitch, ModEnvToPitch,
-		InitialFilterFc, InitialFilterQ, ModLfoToFilterFc, ModEnvToFilterFc, EndAddrsCoarseOffset, ModLfoToVolume, Unused1, ChorusEffectsSend,
-		ReverbEffectsSend, Pan, Unused2, Unused3, Unused4, DelayModLFO, FreqModLFO, DelayVibLFO, FreqVibLFO, DelayModEnv, AttackModEnv, HoldModEnv,
-		DecayModEnv, SustainModEnv, ReleaseModEnv, KeynumToModEnvHold, KeynumToModEnvDecay, DelayVolEnv, AttackVolEnv, HoldVolEnv, DecayVolEnv,
-		SustainVolEnv, ReleaseVolEnv, KeynumToVolEnvHold, KeynumToVolEnvDecay, Instrument, Reserved1, KeyRange, VelRange, StartloopAddrsCoarseOffset,
-		Keynum, Velocity, InitialAttenuation, Reserved2, EndloopAddrsCoarseOffset, CoarseTune, FineTune, SampleID, SampleModes, Reserved3, ScaleTuning,
-		ExclusiveClass, OverridingRootKey, Unused5, EndOper
+		_GEN_TYPE_MASK       = 0x0F,
+		GEN_FLOAT            = 0x01,
+		GEN_INT              = 0x02,
+		GEN_UINT_ADD         = 0x03,
+		GEN_UINT_ADD15       = 0x04,
+		GEN_KEYRANGE         = 0x05,
+		GEN_VELRANGE         = 0x06,
+		GEN_LOOPMODE         = 0x07,
+		GEN_GROUP            = 0x08,
+		GEN_KEYCENTER        = 0x09,
+
+		_GEN_LIMIT_MASK      = 0xF0,
+		GEN_INT_LIMIT12K     = 0x10, //min -12000, max 12000
+		GEN_INT_LIMITFC      = 0x20, //min 1500, max 13500
+		GEN_INT_LIMITQ       = 0x30, //min 0, max 960
+		GEN_INT_LIMIT960     = 0x40, //min -960, max 960
+		GEN_INT_LIMIT16K4500 = 0x50, //min -16000, max 4500
+		GEN_FLOAT_LIMIT12K5K = 0x60, //min -12000, max 5000
+		GEN_FLOAT_LIMIT12K8K = 0x70, //min -12000, max 8000
+		GEN_FLOAT_LIMIT1200  = 0x80, //min -1200, max 1200
+		GEN_FLOAT_LIMITPAN   = 0x90, //* .001f, min -.5f, max .5f,
+		GEN_FLOAT_LIMITATTN  = 0xA0, //* .1f, min 0, max 144.0
+		GEN_FLOAT_MAX1000    = 0xB0, //min 0, max 1000
+		GEN_FLOAT_MAX1440    = 0xC0, //min 0, max 1440
+
+		_GEN_MAX = 59,
 	};
-	switch (genOper)
+	#define _TSFREGIONOFFSET(TYPE, FIELD) (unsigned char)(((TYPE*)&((struct tsf_region*)0)->FIELD) - (TYPE*)0)
+	#define _TSFREGIONENVOFFSET(TYPE, ENV, FIELD) (unsigned char)(((TYPE*)&((&(((struct tsf_region*)0)->ENV))->FIELD)) - (TYPE*)0)
+	static const struct { unsigned char mode, offset; } genMetas[_GEN_MAX] =
 	{
-		case StartAddrsOffset:           region->offset += amount->shortAmount; break;
-		case EndAddrsOffset:             region->end += amount->shortAmount; break;
-		case StartloopAddrsOffset:       region->loop_start += amount->shortAmount; break;
-		case EndloopAddrsOffset:         region->loop_end += amount->shortAmount; break;
-		case StartAddrsCoarseOffset:     region->offset += amount->shortAmount * 32768; break;
-		case ModLfoToPitch:              region->modLfoToPitch = amount->shortAmount; break;
-		case VibLfoToPitch:              region->vibLfoToPitch = amount->shortAmount; break;
-		case ModEnvToPitch:              region->modEnvToPitch = amount->shortAmount; break;
-		case InitialFilterFc:            region->initialFilterFc = amount->shortAmount; break;
-		case InitialFilterQ:             region->initialFilterQ = amount->shortAmount; break;
-		case ModLfoToFilterFc:           region->modLfoToFilterFc = amount->shortAmount; break;
-		case ModEnvToFilterFc:           region->modEnvToFilterFc = amount->shortAmount; break;
-		case EndAddrsCoarseOffset:       region->end += amount->shortAmount * 32768; break;
-		case ModLfoToVolume:             region->modLfoToVolume = amount->shortAmount; break;
-		case Pan:                        region->pan = amount->shortAmount / 1000.0f; break;
-		case DelayModLFO:                region->delayModLFO = amount->shortAmount; break;
-		case FreqModLFO:                 region->freqModLFO = amount->shortAmount; break;
-		case DelayVibLFO:                region->delayVibLFO = amount->shortAmount; break;
-		case FreqVibLFO:                 region->freqVibLFO = amount->shortAmount; break;
-		case DelayModEnv:                region->modenv.delay = amount->shortAmount; break;
-		case AttackModEnv:               region->modenv.attack = amount->shortAmount; break;
-		case HoldModEnv:                 region->modenv.hold = amount->shortAmount; break;
-		case DecayModEnv:                region->modenv.decay = amount->shortAmount; break;
-		case SustainModEnv:              region->modenv.sustain = amount->shortAmount; break;
-		case ReleaseModEnv:              region->modenv.release = amount->shortAmount; break;
-		case KeynumToModEnvHold:         region->modenv.keynumToHold = amount->shortAmount; break;
-		case KeynumToModEnvDecay:        region->modenv.keynumToDecay = amount->shortAmount; break;
-		case DelayVolEnv:                region->ampenv.delay = amount->shortAmount; break;
-		case AttackVolEnv:               region->ampenv.attack = amount->shortAmount; break;
-		case HoldVolEnv:                 region->ampenv.hold = amount->shortAmount; break;
-		case DecayVolEnv:                region->ampenv.decay = amount->shortAmount; break;
-		case SustainVolEnv:              region->ampenv.sustain = amount->shortAmount; break;
-		case ReleaseVolEnv:              region->ampenv.release = amount->shortAmount; break;
-		case KeynumToVolEnvHold:         region->ampenv.keynumToHold = amount->shortAmount; break;
-		case KeynumToVolEnvDecay:        region->ampenv.keynumToDecay = amount->shortAmount; break;
-		case KeyRange:                   region->lokey = amount->range.lo; region->hikey = amount->range.hi; break;
-		case VelRange:                   region->lovel = amount->range.lo; region->hivel = amount->range.hi; break;
-		case StartloopAddrsCoarseOffset: region->loop_start += amount->shortAmount * 32768; break;
-		case InitialAttenuation:         region->attenuation += amount->shortAmount * 0.1f; break;
-		case EndloopAddrsCoarseOffset:   region->loop_end += amount->shortAmount * 32768; break;
-		case CoarseTune:                 region->transpose += amount->shortAmount; break;
-		case FineTune:                   region->tune += amount->shortAmount; break;
-		case SampleModes:                region->loop_mode = ((amount->wordAmount&3) == 3 ? TSF_LOOPMODE_SUSTAIN : ((amount->wordAmount&3) == 1 ? TSF_LOOPMODE_CONTINUOUS : TSF_LOOPMODE_NONE)); break;
-		case ScaleTuning:                region->pitch_keytrack = amount->shortAmount; break;
-		case ExclusiveClass:             region->group = amount->wordAmount; break;
-		case OverridingRootKey:          region->pitch_keycenter = amount->shortAmount; break;
-		//case gen_endOper: break; // Ignore.
-		//default: addUnsupportedOpcode(generator_name);
+		{ GEN_UINT_ADD                     , _TSFREGIONOFFSET(unsigned int, offset               ) }, // 0 StartAddrsOffset
+		{ GEN_UINT_ADD                     , _TSFREGIONOFFSET(unsigned int, end                  ) }, // 1 EndAddrsOffset
+		{ GEN_UINT_ADD                     , _TSFREGIONOFFSET(unsigned int, loop_start           ) }, // 2 StartloopAddrsOffset
+		{ GEN_UINT_ADD                     , _TSFREGIONOFFSET(unsigned int, loop_end             ) }, // 3 EndloopAddrsOffset
+		{ GEN_UINT_ADD15                   , _TSFREGIONOFFSET(unsigned int, offset               ) }, // 4 StartAddrsCoarseOffset
+		{ GEN_INT   | GEN_INT_LIMIT12K     , _TSFREGIONOFFSET(         int, modLfoToPitch        ) }, // 5 ModLfoToPitch
+		{ GEN_INT   | GEN_INT_LIMIT12K     , _TSFREGIONOFFSET(         int, vibLfoToPitch        ) }, // 6 VibLfoToPitch
+		{ GEN_INT   | GEN_INT_LIMIT12K     , _TSFREGIONOFFSET(         int, modEnvToPitch        ) }, // 7 ModEnvToPitch
+		{ GEN_INT   | GEN_INT_LIMITFC      , _TSFREGIONOFFSET(         int, initialFilterFc      ) }, // 8 InitialFilterFc
+		{ GEN_INT   | GEN_INT_LIMITQ       , _TSFREGIONOFFSET(         int, initialFilterQ       ) }, // 9 InitialFilterQ
+		{ GEN_INT   | GEN_INT_LIMIT12K     , _TSFREGIONOFFSET(         int, modLfoToFilterFc     ) }, //10 ModLfoToFilterFc
+		{ GEN_INT   | GEN_INT_LIMIT12K     , _TSFREGIONOFFSET(         int, modEnvToFilterFc     ) }, //11 ModEnvToFilterFc
+		{ GEN_UINT_ADD15                   , _TSFREGIONOFFSET(unsigned int, end                  ) }, //12 EndAddrsCoarseOffset
+		{ GEN_INT   | GEN_INT_LIMIT960     , _TSFREGIONOFFSET(         int, modLfoToVolume       ) }, //13 ModLfoToVolume
+		{ 0                                , (0                                                  ) }, //   Unused
+		{ 0                                , (0                                                  ) }, //15 ChorusEffectsSend (unsupported)
+		{ 0                                , (0                                                  ) }, //16 ReverbEffectsSend (unsupported)
+		{ GEN_FLOAT | GEN_FLOAT_LIMITPAN   , _TSFREGIONOFFSET(       float, pan                  ) }, //17 Pan
+		{ 0                                , (0                                                  ) }, //   Unused
+		{ 0                                , (0                                                  ) }, //   Unused
+		{ 0                                , (0                                                  ) }, //   Unused
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K5K , _TSFREGIONOFFSET(       float, delayModLFO          ) }, //21 DelayModLFO
+		{ GEN_INT   | GEN_INT_LIMIT16K4500 , _TSFREGIONOFFSET(         int, freqModLFO           ) }, //22 FreqModLFO
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K5K , _TSFREGIONOFFSET(       float, delayVibLFO          ) }, //23 DelayVibLFO
+		{ GEN_INT   | GEN_INT_LIMIT16K4500 , _TSFREGIONOFFSET(         int, freqVibLFO           ) }, //24 FreqVibLFO
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K5K , _TSFREGIONENVOFFSET(    float, modenv, delay        ) }, //25 DelayModEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K8K , _TSFREGIONENVOFFSET(    float, modenv, attack       ) }, //26 AttackModEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K5K , _TSFREGIONENVOFFSET(    float, modenv, hold         ) }, //27 HoldModEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K8K , _TSFREGIONENVOFFSET(    float, modenv, decay        ) }, //28 DecayModEnv
+		{ GEN_FLOAT | GEN_FLOAT_MAX1000    , _TSFREGIONENVOFFSET(    float, modenv, sustain      ) }, //29 SustainModEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K8K , _TSFREGIONENVOFFSET(    float, modenv, release      ) }, //30 ReleaseModEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT1200  , _TSFREGIONENVOFFSET(    float, modenv, keynumToHold ) }, //31 KeynumToModEnvHold
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT1200  , _TSFREGIONENVOFFSET(    float, modenv, keynumToDecay) }, //32 KeynumToModEnvDecay
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K5K , _TSFREGIONENVOFFSET(    float, ampenv, delay        ) }, //33 DelayVolEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K8K , _TSFREGIONENVOFFSET(    float, ampenv, attack       ) }, //34 AttackVolEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K5K , _TSFREGIONENVOFFSET(    float, ampenv, hold         ) }, //35 HoldVolEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K8K , _TSFREGIONENVOFFSET(    float, ampenv, decay        ) }, //36 DecayVolEnv
+		{ GEN_FLOAT | GEN_FLOAT_MAX1440    , _TSFREGIONENVOFFSET(    float, ampenv, sustain      ) }, //37 SustainVolEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT12K8K , _TSFREGIONENVOFFSET(    float, ampenv, release      ) }, //38 ReleaseVolEnv
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT1200  , _TSFREGIONENVOFFSET(    float, ampenv, keynumToHold ) }, //39 KeynumToVolEnvHold
+		{ GEN_FLOAT | GEN_FLOAT_LIMIT1200  , _TSFREGIONENVOFFSET(    float, ampenv, keynumToDecay) }, //40 KeynumToVolEnvDecay
+		{ 0                                , (0                                                  ) }, //   Instrument (special)
+		{ 0                                , (0                                                  ) }, //   Reserved
+		{ GEN_KEYRANGE                     , (0                                                  ) }, //43 KeyRange
+		{ GEN_VELRANGE                     , (0                                                  ) }, //44 VelRange
+		{ GEN_UINT_ADD15                   , _TSFREGIONOFFSET(unsigned int, loop_start           ) }, //45 StartloopAddrsCoarseOffset
+		{ 0                                , (0                                                  ) }, //46 Keynum (special)
+		{ 0                                , (0                                                  ) }, //47 Velocity (special)
+		{ GEN_FLOAT | GEN_FLOAT_LIMITATTN  , _TSFREGIONOFFSET(       float, attenuation          ) }, //48 InitialAttenuation
+		{ 0                                , (0                                                  ) }, //   Reserved
+		{ GEN_UINT_ADD15                   , _TSFREGIONOFFSET(unsigned int, loop_end             ) }, //50 EndloopAddrsCoarseOffset
+		{ GEN_INT                          , _TSFREGIONOFFSET(         int, transpose            ) }, //51 CoarseTune
+		{ GEN_INT                          , _TSFREGIONOFFSET(         int, tune                 ) }, //52 FineTune
+		{ 0                                , (0                                                  ) }, //   SampleID (special)
+		{ GEN_LOOPMODE                     , _TSFREGIONOFFSET(         int, loop_mode            ) }, //54 SampleModes
+		{ 0                                , (0                                                  ) }, //   Reserved
+		{ GEN_INT                          , _TSFREGIONOFFSET(         int, pitch_keytrack       ) }, //56 ScaleTuning
+		{ GEN_GROUP                        , _TSFREGIONOFFSET(unsigned int, group                ) }, //57 ExclusiveClass
+		{ GEN_KEYCENTER                    , _TSFREGIONOFFSET(         int, pitch_keycenter      ) }, //58 OverridingRootKey
+	};
+	#undef _TSFREGIONOFFSET
+	#undef _TSFREGIONENVOFFSET
+	if (amount)
+	{
+		int offset;
+		if (genOper >= _GEN_MAX) return;
+		offset = genMetas[genOper].offset;
+		switch (genMetas[genOper].mode & _GEN_TYPE_MASK)
+		{
+			case GEN_FLOAT:      ((       float*)region)[offset]  = amount->shortAmount;     return;
+			case GEN_INT:        ((         int*)region)[offset]  = amount->shortAmount;     return;
+			case GEN_UINT_ADD:   ((unsigned int*)region)[offset] += amount->shortAmount;     return;
+			case GEN_UINT_ADD15: ((unsigned int*)region)[offset] += amount->shortAmount<<15; return;
+			case GEN_KEYRANGE:   region->lokey = amount->range.lo; region->hikey = amount->range.hi; return;
+			case GEN_VELRANGE:   region->lovel = amount->range.lo; region->hivel = amount->range.hi; return;
+			case GEN_LOOPMODE:   region->loop_mode       = ((amount->wordAmount&3) == 3 ? TSF_LOOPMODE_SUSTAIN : ((amount->wordAmount&3) == 1 ? TSF_LOOPMODE_CONTINUOUS : TSF_LOOPMODE_NONE)); return;
+			case GEN_GROUP:      region->group           = amount->wordAmount;  return;
+			case GEN_KEYCENTER:  region->pitch_keycenter = amount->shortAmount; return;
+		}
+	}
+	else //merge regions and clamp values
+	{
+		for (genOper = 0; genOper != _GEN_MAX; genOper++)
+		{
+			int offset = genMetas[genOper].offset;
+			switch (genMetas[genOper].mode & _GEN_TYPE_MASK)
+			{
+				case GEN_FLOAT:
+				{
+					float *val = &((float*)region)[offset], vfactor, vmin, vmax;
+					*val += ((float*)merge_region)[offset];
+					switch (genMetas[genOper].mode & _GEN_LIMIT_MASK)
+					{
+						case GEN_FLOAT_LIMIT12K5K: vfactor =   1.0f; vmin = -12000.0f; vmax = 5000.0f; break;
+						case GEN_FLOAT_LIMIT12K8K: vfactor =   1.0f; vmin = -12000.0f; vmax = 8000.0f; break;
+						case GEN_FLOAT_LIMIT1200:  vfactor =   1.0f; vmin =  -1200.0f; vmax = 1200.0f; break;
+						case GEN_FLOAT_LIMITPAN:   vfactor = 0.001f; vmin =     -0.5f; vmax =    0.5f; break;
+						case GEN_FLOAT_LIMITATTN:  vfactor =   0.1f; vmin =      0.0f; vmax =  144.0f; break;
+						case GEN_FLOAT_MAX1000:    vfactor =   1.0f; vmin =      0.0f; vmax = 1000.0f; break;
+						case GEN_FLOAT_MAX1440:    vfactor =   1.0f; vmin =      0.0f; vmax = 1440.0f; break;
+						default: continue;
+					}
+					*val *= vfactor;
+					if      (*val < vmin) *val = vmin;
+					else if (*val > vmax) *val = vmax;
+					continue;
+				}
+				case GEN_INT:
+				{
+					int *val = &((int*)region)[offset], vmin, vmax;
+					*val += ((int*)merge_region)[offset];
+					switch (genMetas[genOper].mode & _GEN_LIMIT_MASK)
+					{
+						case GEN_INT_LIMIT12K:     vmin = -12000; vmax = 12000; break;
+						case GEN_INT_LIMITFC:      vmin =   1500; vmax = 13500; break;
+						case GEN_INT_LIMITQ:       vmin =      0; vmax =   960; break;
+						case GEN_INT_LIMIT960:     vmin =   -960; vmax =   960; break;
+						case GEN_INT_LIMIT16K4500: vmin = -16000; vmax =  4500; break;
+						default: continue;
+					}
+					if      (*val < vmin) *val = vmin;
+					else if (*val > vmax) *val = vmax;
+					continue;
+				}
+				case GEN_UINT_ADD:
+				{
+					((unsigned int*)region)[offset] += ((unsigned int*)merge_region)[offset];
+					continue;
+				}
+			}
+		}
 	}
 }
 
@@ -647,39 +751,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 								if (presetRegion.hivel < zoneRegion.hivel) zoneRegion.hivel = presetRegion.hivel;
 
 								//sum regions
-								zoneRegion.offset += presetRegion.offset;
-								zoneRegion.end += presetRegion.end;
-								zoneRegion.loop_start += presetRegion.loop_start;
-								zoneRegion.loop_end += presetRegion.loop_end;
-								zoneRegion.transpose += presetRegion.transpose;
-								zoneRegion.tune += presetRegion.tune;
-								zoneRegion.pitch_keytrack += presetRegion.pitch_keytrack;
-								zoneRegion.attenuation += presetRegion.attenuation;
-								zoneRegion.pan += presetRegion.pan;
-								zoneRegion.ampenv.delay += presetRegion.ampenv.delay;
-								zoneRegion.ampenv.attack += presetRegion.ampenv.attack;
-								zoneRegion.ampenv.hold += presetRegion.ampenv.hold;
-								zoneRegion.ampenv.decay += presetRegion.ampenv.decay;
-								zoneRegion.ampenv.sustain += presetRegion.ampenv.sustain;
-								zoneRegion.ampenv.release += presetRegion.ampenv.release;
-								zoneRegion.modenv.delay += presetRegion.modenv.delay;
-								zoneRegion.modenv.attack += presetRegion.modenv.attack;
-								zoneRegion.modenv.hold += presetRegion.modenv.hold;
-								zoneRegion.modenv.decay += presetRegion.modenv.decay;
-								zoneRegion.modenv.sustain += presetRegion.modenv.sustain;
-								zoneRegion.modenv.release += presetRegion.modenv.release;
-								zoneRegion.initialFilterQ += presetRegion.initialFilterQ;
-								zoneRegion.initialFilterFc += presetRegion.initialFilterFc;
-								zoneRegion.modEnvToPitch += presetRegion.modEnvToPitch;
-								zoneRegion.modEnvToFilterFc += presetRegion.modEnvToFilterFc;
-								zoneRegion.delayModLFO += presetRegion.delayModLFO;
-								zoneRegion.freqModLFO += presetRegion.freqModLFO;
-								zoneRegion.modLfoToPitch += presetRegion.modLfoToPitch;
-								zoneRegion.modLfoToFilterFc += presetRegion.modLfoToFilterFc;
-								zoneRegion.modLfoToVolume += presetRegion.modLfoToVolume;
-								zoneRegion.delayVibLFO += presetRegion.delayVibLFO;
-								zoneRegion.freqVibLFO += presetRegion.freqVibLFO;
-								zoneRegion.vibLfoToPitch += presetRegion.vibLfoToPitch;
+								tsf_region_operator(&zoneRegion, 0, TSF_NULL, &presetRegion);
 
 								// EG times need to be converted from timecents to seconds.
 								tsf_region_envtosecs(&zoneRegion.ampenv, TSF_TRUE);
@@ -689,13 +761,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 								zoneRegion.delayModLFO = (zoneRegion.delayModLFO < -11950.0f ? 0.0f : tsf_timecents2Secsf(zoneRegion.delayModLFO));
 								zoneRegion.delayVibLFO = (zoneRegion.delayVibLFO < -11950.0f ? 0.0f : tsf_timecents2Secsf(zoneRegion.delayVibLFO));
 
-								// Pin values to their ranges.
-								if (zoneRegion.pan < -0.5f) zoneRegion.pan = -0.5f;
-								else if (zoneRegion.pan > 0.5f) zoneRegion.pan = 0.5f;
-								if (zoneRegion.initialFilterQ < 1500 || zoneRegion.initialFilterQ > 13500) zoneRegion.initialFilterQ = 0;
-								if (zoneRegion.attenuation < 0) zoneRegion.attenuation = 0;
-								else if (zoneRegion.attenuation > 1440) zoneRegion.attenuation = 1440;
-
+								// Fixup sample positions
 								pshdr = &hydra->shdrs[pigen->genAmount.wordAmount];
 								zoneRegion.offset += pshdr->start;
 								zoneRegion.end += pshdr->end;
@@ -712,7 +778,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 								region_index++;
 								hadSampleID = 1;
 							}
-							else tsf_region_operator(&zoneRegion, pigen->genOper, &pigen->genAmount);
+							else tsf_region_operator(&zoneRegion, pigen->genOper, &pigen->genAmount, TSF_NULL);
 						}
 
 						// Handle instrument's global zone.
@@ -724,7 +790,7 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 					}
 					hadGenInstrument = 1;
 				}
-				else tsf_region_operator(&presetRegion, ppgen->genOper, &ppgen->genAmount);
+				else tsf_region_operator(&presetRegion, ppgen->genOper, &ppgen->genAmount, TSF_NULL);
 			}
 
 			// Modulators (TODO)
@@ -997,7 +1063,7 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 		if (dynamicLowpass)
 		{
 			float fres = tmpInitialFilterFc + v->modlfo.level * tmpModLfoToFilterFc + v->modenv.level * tmpModEnvToFilterFc;
-			float lowpassFc = (fres <= 13500 ? tsf_cents2Hertz(fres) / f->outSampleRate : 1.0f);
+			float lowpassFc = (fres <= 13500 ? tsf_cents2Hertz(fres) / tmpSampleRate : 1.0f);
 			tmpLowpass.active = (lowpassFc < 0.499f);
 			if (tmpLowpass.active) tsf_voice_lowpass_setup(&tmpLowpass, lowpassFc);
 		}
@@ -1011,8 +1077,8 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 		gainMono = noteGain * v->ampenv.level;
 
 		// Update EG.
-		tsf_voice_envelope_process(&v->ampenv, blockSamples, f->outSampleRate);
-		if (updateModEnv) tsf_voice_envelope_process(&v->modenv, blockSamples, f->outSampleRate);
+		tsf_voice_envelope_process(&v->ampenv, blockSamples, tmpSampleRate);
+		if (updateModEnv) tsf_voice_envelope_process(&v->modenv, blockSamples, tmpSampleRate);
 
 		// Update LFOs.
 		if (updateModLFO) tsf_voice_lfo_process(&v->modlfo, blockSamples);
