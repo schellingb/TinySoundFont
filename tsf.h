@@ -1,4 +1,4 @@
-/* TinySoundFont - v0.8 - SoundFont2 synthesizer - https://github.com/schellingb/TinySoundFont
+/* TinySoundFont - v0.9 - SoundFont2 synthesizer - https://github.com/schellingb/TinySoundFont
                                      no warranty implied; use at your own risk
    Do this:
       #define TSF_IMPLEMENTATION
@@ -123,12 +123,29 @@ enum TSFOutputMode
 // run on a different thread than where the playback tsf_note* functions
 // are called. In which case some sort of concurrency control like a
 // mutex needs to be used so they are not called at the same time.
+// Alternatively, you can pre-allocate a maximum number of voices that can
+// play simultaneously by calling tsf_set_max_voices after loading.
+// That way memory re-allocation will not happen during tsf_note_on and
+// TSF should become mostly thread safe.
+// There is a theoretical chance that ending notes would negatively influence
+// a voice that is rendering at the time but it is hard to say.
+// Also be aware, this has not been tested much.
 
 // Setup the parameters for the voice render methods
 //   outputmode: if mono or stereo and how stereo channel data is ordered
 //   samplerate: the number of samples per second (output frequency)
 //   global_gain_db: volume gain in decibels (>0 means higher, <0 means lower)
 TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate, float global_gain_db CPP_DEFAULT0);
+
+// Set the global gain as a volume factor
+//   global_gain: the desired volume where 1.0 is 100%
+TSFDEF void tsf_set_volume(tsf* f, float global_gain);
+
+// Set the maximum number of voices to play simultaneously
+// Depending on the soundfond, one note can cause many new voices to be started,
+// so don't keep this number too low or otherwise sounds may not play.
+//   max_voices: maximum number to pre-allocate and set the limit to
+TSFDEF void tsf_set_max_voices(tsf* f, int max_voices);
 
 // Start playing a note
 //   preset_index: preset index >= 0 and < tsf_get_presetcount()
@@ -214,6 +231,7 @@ TSFDEF float tsf_channel_get_tuning(tsf* f, int channel);
 #endif //TSF_INCLUDE_TSF_INL
 
 #ifdef TSF_IMPLEMENTATION
+#undef TSF_IMPLEMENTATION
 
 // The lower this block size is the more accurate the effects are.
 // Increasing the value significantly lowers the CPU usage of the voice rendering.
@@ -288,6 +306,7 @@ struct tsf
 
 	int presetNum;
 	int voiceNum;
+	int maxVoiceNum;
 	int outputSampleSize;
 	unsigned int voicePlayIndex;
 
@@ -992,21 +1011,35 @@ static void tsf_voice_kill(struct tsf_voice* v)
 	v->playingPreset = -1;
 }
 
-static void tsf_voice_end(struct tsf_voice* v, float outSampleRate)
+static void tsf_voice_end(tsf* f, struct tsf_voice* v)
 {
-	tsf_voice_envelope_nextsegment(&v->ampenv, TSF_SEGMENT_SUSTAIN, outSampleRate);
-	tsf_voice_envelope_nextsegment(&v->modenv, TSF_SEGMENT_SUSTAIN, outSampleRate);
-	if (v->region->loop_mode == TSF_LOOPMODE_SUSTAIN)
+	// if maxVoiceNum is set, assume that voice rendering and note queuing are on sparate threads
+	// so to minimize the chance that voice rendering would advance the segment at the same time
+	// we just do it twice here and hope that it sticks
+	int repeats = (f->maxVoiceNum ? 2 : 1);
+	while (repeats--)
 	{
-		// Continue playing, but stop looping.
-		v->loopEnd = v->loopStart;
+		tsf_voice_envelope_nextsegment(&v->ampenv, TSF_SEGMENT_SUSTAIN, f->outSampleRate);
+		tsf_voice_envelope_nextsegment(&v->modenv, TSF_SEGMENT_SUSTAIN, f->outSampleRate);
+		if (v->region->loop_mode == TSF_LOOPMODE_SUSTAIN)
+		{
+			// Continue playing, but stop looping.
+			v->loopEnd = v->loopStart;
+		}
 	}
 }
 
-static void tsf_voice_endquick(struct tsf_voice* v, float outSampleRate)
+static void tsf_voice_endquick(tsf* f, struct tsf_voice* v)
 {
-	v->ampenv.parameters.release = 0.0f; tsf_voice_envelope_nextsegment(&v->ampenv, TSF_SEGMENT_SUSTAIN, outSampleRate);
-	v->modenv.parameters.release = 0.0f; tsf_voice_envelope_nextsegment(&v->modenv, TSF_SEGMENT_SUSTAIN, outSampleRate);
+	// if maxVoiceNum is set, assume that voice rendering and note queuing are on sparate threads
+	// so to minimize the chance that voice rendering would advance the segment at the same time
+	// we just do it twice here and hope that it sticks
+	int repeats = (f->maxVoiceNum ? 2 : 1);
+	while (repeats--)
+	{
+		v->ampenv.parameters.release = 0.0f; tsf_voice_envelope_nextsegment(&v->ampenv, TSF_SEGMENT_SUSTAIN, f->outSampleRate);
+		v->modenv.parameters.release = 0.0f; tsf_voice_envelope_nextsegment(&v->modenv, TSF_SEGMENT_SUSTAIN, f->outSampleRate);
+	}
 }
 
 static void tsf_voice_calcpitchratio(struct tsf_voice* v, float pitchShift, float outSampleRate)
@@ -1261,7 +1294,7 @@ TSFDEF void tsf_reset(tsf* f)
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && (v->ampenv.segment < TSF_SEGMENT_RELEASE || v->ampenv.parameters.release))
-			tsf_voice_endquick(v, f->outSampleRate);
+			tsf_voice_endquick(f, v);
 	if (f->channels) { TSF_FREE(f->channels->channels); TSF_FREE(f->channels); f->channels = TSF_NULL; }
 }
 
@@ -1297,6 +1330,20 @@ TSFDEF void tsf_set_output(tsf* f, enum TSFOutputMode outputmode, int samplerate
 	f->globalGainDB = global_gain_db;
 }
 
+TSFDEF void tsf_set_volume(tsf* f, float global_volume)
+{
+	f->globalGainDB = (global_volume == 1.0f ? 0 : -tsf_gainToDecibels(1.0f / global_volume));
+}
+
+TSFDEF void tsf_set_max_voices(tsf* f, int max_voices)
+{
+	int i = f->voiceNum;
+	f->voiceNum = f->maxVoiceNum = (f->voiceNum > max_voices ? f->voiceNum : max_voices);
+	f->voices = (struct tsf_voice*)TSF_REALLOC(f->voices, f->voiceNum * sizeof(struct tsf_voice));
+	for (; i != max_voices; i++)
+		f->voices[i].playingPreset = -1;
+}
+
 TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 {
 	short midiVelocity = (short)(vel * 127);
@@ -1317,13 +1364,18 @@ TSFDEF void tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		if (region->group)
 		{
 			for (; v != vEnd; v++)
-				if (v->playingPreset == preset_index && v->region->group == region->group) tsf_voice_endquick(v, f->outSampleRate);
+				if (v->playingPreset == preset_index && v->region->group == region->group) tsf_voice_endquick(f, v);
 				else if (v->playingPreset == -1 && !voice) voice = v;
 		}
 		else for (; v != vEnd; v++) if (v->playingPreset == -1) { voice = v; break; }
 
 		if (!voice)
 		{
+			if (f->maxVoiceNum)
+			{
+				// voices have been pre-allocated and limited to a maximum, unable to start playing this voice
+				continue;
+			}
 			f->voiceNum += 4;
 			f->voices = (struct tsf_voice*)TSF_REALLOC(f->voices, f->voiceNum * sizeof(struct tsf_voice));
 			voice = &f->voices[f->voiceNum - 4];
@@ -1398,7 +1450,7 @@ TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 		//Stop all voices with matching preset, key and the smallest play index which was enumerated above
 		if (v != vMatchFirst && v != vMatchLast &&
 			(v->playIndex != vMatchFirst->playIndex || v->playingPreset != preset_index || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE)) continue;
-		tsf_voice_end(v, f->outSampleRate);
+		tsf_voice_end(f, v);
 	}
 }
 
@@ -1414,7 +1466,7 @@ TSFDEF void tsf_note_off_all(tsf* f)
 {
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
-		tsf_voice_end(v, f->outSampleRate);
+		tsf_voice_end(f, v);
 }
 
 TSFDEF int tsf_active_voice_count(tsf* f)
@@ -1630,7 +1682,7 @@ TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 		//Stop all voices with matching channel, key and the smallest play index which was enumerated above
 		if (v != vMatchFirst && v != vMatchLast &&
 			(v->playIndex != vMatchFirst->playIndex || v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE)) continue;
-		tsf_voice_end(v, f->outSampleRate);
+		tsf_voice_end(f, v);
 	}
 }
 
@@ -1639,7 +1691,7 @@ TSFDEF void tsf_channel_note_off_all(tsf* f, int channel)
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE)
-			tsf_voice_end(v, f->outSampleRate);
+			tsf_voice_end(f, v);
 }
 
 TSFDEF void tsf_channel_sounds_off_all(tsf* f, int channel)
@@ -1647,7 +1699,7 @@ TSFDEF void tsf_channel_sounds_off_all(tsf* f, int channel)
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && (v->ampenv.segment < TSF_SEGMENT_RELEASE || v->ampenv.parameters.release))
-			tsf_voice_endquick(v, f->outSampleRate);
+			tsf_voice_endquick(f, v);
 }
 
 TSFDEF void tsf_channel_midi_control(tsf* f, int channel, int controller, int control_value)
