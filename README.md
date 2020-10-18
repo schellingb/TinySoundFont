@@ -35,3 +35,8 @@ C standard libraries for fopen, math and malloc (can be removed by providing cus
 ## License
 
 TinySoundFont is available under the [MIT license](https://choosealicense.com/licenses/mit/).
+
+#try this and give your feedback
+#the steps are easy to follow
+#do follow
+
