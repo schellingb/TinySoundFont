@@ -53,6 +53,11 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 
 int main(int argc, char *argv[])
 {
+	// This implements a small program that you can launch without
+	// parameters for a default file & soundfont, or with these arguments:
+	//
+	// ./example3-... <yourfile>.mid <yoursoundfont>.sf2
+
 	tml_message* TinyMidiLoader = NULL;
 
 	// Define the desired audio output format we request
@@ -73,7 +78,7 @@ int main(int argc, char *argv[])
 	//Venture (Original WIP) by Ximon
 	//https://musescore.com/user/2391686/scores/841451
 	//License: Creative Commons copyright waiver (CC0)
-	TinyMidiLoader = tml_load_filename("venture.mid");
+	TinyMidiLoader = tml_load_filename((argc >= 2 ? argv[1] : "venture.mid"));
 	if (!TinyMidiLoader)
 	{
 		fprintf(stderr, "Could not load MIDI file\n");
@@ -84,7 +89,9 @@ int main(int argc, char *argv[])
 	g_MidiMessage = TinyMidiLoader;
 
 	// Load the SoundFont from a file
-	g_TinySoundFont = tsf_load_filename("florestan-subset.sf2");
+	g_TinySoundFont = tsf_load_filename(
+		(argc >= 3 ? argv[2] : "florestan-subset.sf2")
+	);
 	if (!g_TinySoundFont)
 	{
 		fprintf(stderr, "Could not load SoundFont\n");
