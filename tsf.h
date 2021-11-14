@@ -1344,14 +1344,19 @@ TSFDEF tsf* tsf_copy(tsf* f)
 {
 	tsf* res;
 	if (!f) return TSF_NULL;
-	if (!f->refCount)
-		*(f->refCount = (int*)TSF_MALLOC(sizeof(int))) = 1;
+	if (!f->refCount) {
+		f->refCount = (int*)TSF_MALLOC(sizeof(int));
+		if (!f->refCount)
+			return TSF_NULL;
+		*f->refCount = 1;
+	}
 	res = (tsf*)TSF_MALLOC(sizeof(tsf));
 	if (!res) return TSF_NULL;
 	TSF_MEMCPY(res, f, sizeof(tsf));
 	res->voices = TSF_NULL;
 	res->voiceNum = 0;
 	res->channels = TSF_NULL;
+
 	++(*res->refCount);
 	return res;
 }
