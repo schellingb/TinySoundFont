@@ -1316,16 +1316,9 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 				goto skipfontinit;
 			}
 			res->fontSamples = fontSamples;
-			res->outSampleRate = 44100.0f;
-			res->refCount = (int*)TSF_MALLOC(sizeof(int));
-			if (!res->refCount)
-			{
-				TSF_FREE(res);
-				res = TSF_NULL;
-				goto skipfontinit;
-			}
-			*res->refCount = 1;
 			fontSamples = TSF_NULL; //don't free below
+			res->outSampleRate = 44100.0f;
+			
 			if (!tsf_load_presets(res, &hydra, fontSampleCount))
 			{
 				TSF_FREE(res);
@@ -1349,8 +1342,10 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 
 TSFDEF tsf* tsf_copy(tsf* f)
 {
-	struct tsf* res;
+	tsf* res;
 	if (!f) return TSF_NULL;
+	if (!f->refCount)
+		*(f->refCount = (int*)TSF_MALLOC(sizeof(int))) = 1;
 	res = (tsf*)TSF_MALLOC(sizeof(tsf));
 	if (!res) return TSF_NULL;
 	TSF_MEMCPY(res, f, sizeof(tsf));
@@ -1365,7 +1360,7 @@ TSFDEF void tsf_close(tsf* f)
 {
 	struct tsf_preset *preset, *presetEnd;
 	if (!f) return;
-	if (--(*f->refCount) == 0)
+	if (!f->refCount || !--(*f->refCount))
 	{
 		for (preset = f->presets, presetEnd = preset + f->presetNum; preset != presetEnd; preset++)
 			TSF_FREE(preset->regions);
@@ -1373,8 +1368,8 @@ TSFDEF void tsf_close(tsf* f)
 		TSF_FREE(f->fontSamples);
 		TSF_FREE(f->refCount);
 	}
+	TSF_FREE(f->channels);
 	TSF_FREE(f->voices);
-	if (f->channels) TSF_FREE(f->channels);
 	TSF_FREE(f);
 }
 
@@ -1865,9 +1860,12 @@ TSFDEF int tsf_channel_midi_control(tsf* f, int channel, int controller, int con
 			c->midiVolume = c->midiExpression = 16383;
 			c->midiPan = 8192;
 			c->bank = 0;
+			c->midiRPN = 0xFFFF;
+			c->midiData = 0;
 			tsf_channel_set_volume(f, channel, 1.0f);
 			tsf_channel_set_pan(f, channel, 0.5f);
 			tsf_channel_set_pitchrange(f, channel, 2.0f);
+			tsf_channel_set_tuning(f, channel, 0);
 			return 1;
 	}
 	return 1;
