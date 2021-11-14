@@ -1755,9 +1755,12 @@ TSFDEF void tsf_channel_midi_control(tsf* f, int channel, int controller, int co
 			c->midiVolume = c->midiExpression = 16383;
 			c->midiPan = 8192;
 			c->bank = 0;
+			c->midiRPN = 0xFFFF;
+			c->midiData = 0;
 			tsf_channel_set_volume(f, channel, 1.0f);
 			tsf_channel_set_pan(f, channel, 0.5f);
 			tsf_channel_set_pitchrange(f, channel, 2.0f);
+			tsf_channel_set_tuning(f, channel, 0);
 			return;
 	}
 	return;
