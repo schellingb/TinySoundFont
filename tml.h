@@ -88,8 +88,22 @@ typedef struct tml_message
 	// - pitch_bend for TML_PITCH_BEND messages
 	union
 	{
+		#ifdef _MSC_VER
+		#pragma warning(push)
+		#pragma warning(disable:4201) //nonstandard extension used: nameless struct/union
+		#elif defined(__GNUC__)
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored "-Wpedantic" //ISO C++ prohibits anonymous structs
+		#endif
+
 		struct { union { char key, control, program, channel_pressure; }; union { char velocity, key_pressure, control_value; }; };
 		struct { unsigned short pitch_bend; };
+
+		#ifdef _MSC_VER
+		#pragma warning( pop )
+		#elif defined(__GNUC__)
+		#pragma GCC diagnostic pop
+		#endif
 	};
 
 	// The pointer to the next message in time following this event
