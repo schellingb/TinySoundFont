@@ -308,12 +308,12 @@ struct tsf
 	float* fontSamples;
 	struct tsf_voice* voices;
 	struct tsf_channels* channels;
-	float** outputSamples;
+	float* outputSamples;
 
 	int presetNum;
 	int voiceNum;
 	int maxVoiceNum;
-	int *outputSampleSize;
+	int outputSampleSize;
 	unsigned int voicePlayIndex;
 
 	enum TSFOutputMode outputmode;
@@ -1272,10 +1272,7 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 		res->presets = (struct tsf_preset*)TSF_MALLOC(res->presetNum * sizeof(struct tsf_preset));
 		res->fontSamples = fontSamples;
 		res->outSampleRate = 44100.0f;
-		res->outputSamples = (float**)TSF_MALLOC(sizeof(float*));
-		*res->outputSamples = TSF_NULL;
-		res->outputSampleSize = (int*)TSF_MALLOC(sizeof(int));
-		*res->outputSampleSize = 0;
+		res->outputSampleSize = 0;
 		res->refCount = (int*)TSF_MALLOC(sizeof(int));
 		*res->refCount = 1;
 		fontSamples = TSF_NULL; //don't free below
@@ -1300,6 +1297,8 @@ TSFDEF tsf* tsf_copy(tsf* f)
 	res->voices = TSF_NULL;
 	res->voiceNum = 0;
 	res->channels = TSF_NULL;
+	res->outputSamples = TSF_NULL;
+	res->outputSampleSize = 0;
 	++(*res->refCount);
 
 	return res;
@@ -1315,11 +1314,9 @@ TSFDEF void tsf_close(tsf* f)
 			TSF_FREE(preset->regions);
 		TSF_FREE(f->presets);
 		TSF_FREE(f->fontSamples);
-		TSF_FREE(*f->outputSamples);
-		TSF_FREE(f->outputSamples);
-		TSF_FREE(f->outputSampleSize);
 		TSF_FREE(f->refCount);
 	}
+	TSF_FREE(f->outputSamples);
 	TSF_FREE(f->voices);
 	if (f->channels) { TSF_FREE(f->channels->channels); TSF_FREE(f->channels); }
 	TSF_FREE(f);
@@ -1518,16 +1515,16 @@ TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing
 	float *floatSamples;
 	int channelSamples = (f->outputmode == TSF_MONO ? 1 : 2) * samples, floatBufferSize = channelSamples * sizeof(float);
 	short* bufferEnd = buffer + channelSamples;
-	if (floatBufferSize > *f->outputSampleSize)
+	if (floatBufferSize > f->outputSampleSize)
 	{
-		TSF_FREE(*f->outputSamples);
-		*f->outputSamples = (float*)TSF_MALLOC(floatBufferSize);
-		*f->outputSampleSize = floatBufferSize;
+		TSF_FREE(f->outputSamples);
+		f->outputSamples = (float*)TSF_MALLOC(floatBufferSize);
+		f->outputSampleSize = floatBufferSize;
 	}
 
-	tsf_render_float(f, *f->outputSamples, samples, TSF_FALSE);
+	tsf_render_float(f, f->outputSamples, samples, TSF_FALSE);
 
-	floatSamples = *f->outputSamples;
+	floatSamples = f->outputSamples;
 	if (flag_mixing) 
 		while (buffer != bufferEnd)
 		{
