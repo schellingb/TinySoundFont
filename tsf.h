@@ -1272,9 +1272,6 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 		res->presets = (struct tsf_preset*)TSF_MALLOC(res->presetNum * sizeof(struct tsf_preset));
 		res->fontSamples = fontSamples;
 		res->outSampleRate = 44100.0f;
-		res->outputSampleSize = 0;
-		res->refCount = (int*)TSF_MALLOC(sizeof(int));
-		*res->refCount = 1;
 		fontSamples = TSF_NULL; //don't free below
 		tsf_load_presets(res, &hydra, fontSampleCount);
 	}
@@ -1287,8 +1284,10 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 
 TSFDEF tsf* tsf_copy(tsf* f)
 {
-	struct tsf* res;
+	tsf* res;
 	if (!f) return TSF_NULL;
+	if (!f->refCount)
+		*(f->refCount = (int*)TSF_MALLOC(sizeof(int))) = 1;
 	res = (tsf*)TSF_MALLOC(sizeof(tsf));
 	memcpy(res, f, sizeof(tsf));
 	res->voices = TSF_NULL;
@@ -1296,7 +1295,7 @@ TSFDEF tsf* tsf_copy(tsf* f)
 	res->channels = TSF_NULL;
 	res->outputSamples = TSF_NULL;
 	res->outputSampleSize = 0;
-	++(*res->refCount);
+	(*res->refCount)++;
 	return res;
 }
 
@@ -1304,7 +1303,7 @@ TSFDEF void tsf_close(tsf* f)
 {
 	struct tsf_preset *preset, *presetEnd;
 	if (!f) return;
-	if (--(*f->refCount) == 0)
+	if (!f->refCount || !--(*f->refCount))
 	{
 		for (preset = f->presets, presetEnd = preset + f->presetNum; preset != presetEnd; preset++)
 			TSF_FREE(preset->regions);
@@ -1312,9 +1311,9 @@ TSFDEF void tsf_close(tsf* f)
 		TSF_FREE(f->fontSamples);
 		TSF_FREE(f->refCount);
 	}
-	TSF_FREE(f->outputSamples);
+	TSF_FREE(f->channels);
 	TSF_FREE(f->voices);
-	if (f->channels) TSF_FREE(f->channels);
+	TSF_FREE(f->outputSamples);
 	TSF_FREE(f);
 }
 
