@@ -89,6 +89,12 @@ struct tsf_stream
 // Generic SoundFont loading method using the stream structure above
 TSFDEF tsf* tsf_load(struct tsf_stream* stream);
 
+// Copy a tsf instance from an existing one, use tsf_close to close it as well.
+// All copied tsf instances and their original instance are linked, and share the underlying soundfont.
+// This allows loading a soundfont only once, but using it for multiple independent playbacks.
+// (This function isn't thread-safe without locking.)
+TSFDEF tsf* tsf_copy(tsf* f);
+
 // Free the memory related to this tsf instance
 TSFDEF void tsf_close(tsf* f);
 
@@ -313,6 +319,7 @@ struct tsf
 	enum TSFOutputMode outputmode;
 	float outSampleRate;
 	float globalGainDB;
+	int* refCount;
 };
 
 #ifndef TSF_NO_STDIO
@@ -1265,6 +1272,9 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 		res->presets = (struct tsf_preset*)TSF_MALLOC(res->presetNum * sizeof(struct tsf_preset));
 		res->fontSamples = fontSamples;
 		res->outSampleRate = 44100.0f;
+		res->outputSampleSize = 0;
+		res->refCount = (int*)TSF_MALLOC(sizeof(int));
+		*res->refCount = 1;
 		fontSamples = TSF_NULL; //don't free below
 		tsf_load_presets(res, &hydra, fontSampleCount);
 	}
@@ -1275,17 +1285,40 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	return res;
 }
 
+TSFDEF tsf* tsf_copy(tsf* f)
+{
+	if (!f)
+		return TSF_NULL;
+
+	tsf* res = TSF_NULL;
+
+	res = (tsf*)TSF_MALLOC(sizeof(tsf));
+	memcpy(res, f, sizeof(tsf));
+	res->voices = TSF_NULL;
+	res->voiceNum = 0;
+	res->channels = TSF_NULL;
+	res->outputSamples = TSF_NULL;
+	res->outputSampleSize = 0;
+	++(*res->refCount);
+
+	return res;
+}
+
 TSFDEF void tsf_close(tsf* f)
 {
 	struct tsf_preset *preset, *presetEnd;
 	if (!f) return;
-	for (preset = f->presets, presetEnd = preset + f->presetNum; preset != presetEnd; preset++)
-		TSF_FREE(preset->regions);
-	TSF_FREE(f->presets);
-	TSF_FREE(f->fontSamples);
+	if (--(*f->refCount) == 0)
+	{
+		for (preset = f->presets, presetEnd = preset + f->presetNum; preset != presetEnd; preset++)
+			TSF_FREE(preset->regions);
+		TSF_FREE(f->presets);
+		TSF_FREE(f->fontSamples);
+		TSF_FREE(f->refCount);
+	}
+	TSF_FREE(f->outputSamples);
 	TSF_FREE(f->voices);
 	if (f->channels) { TSF_FREE(f->channels->channels); TSF_FREE(f->channels); }
-	TSF_FREE(f->outputSamples);
 	TSF_FREE(f);
 }
 
