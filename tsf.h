@@ -447,8 +447,8 @@ struct tsf_channel
 struct tsf_channels
 {
 	void (*setupVoice)(tsf* f, struct tsf_voice* voice);
-	struct tsf_channel* channels;
 	int channelNum, activeChannel;
+	struct tsf_channel channels[1];
 };
 
 static double tsf_timecents2Secsd(double timecents) { return TSF_POW(2.0, timecents / 1200.0); }
@@ -1314,7 +1314,7 @@ TSFDEF void tsf_close(tsf* f)
 	}
 	TSF_FREE(f->outputSamples);
 	TSF_FREE(f->voices);
-	if (f->channels) { TSF_FREE(f->channels->channels); TSF_FREE(f->channels); }
+	if (f->channels) TSF_FREE(f->channels);
 	TSF_FREE(f);
 }
 
@@ -1324,7 +1324,7 @@ TSFDEF void tsf_reset(tsf* f)
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && (v->ampenv.segment < TSF_SEGMENT_RELEASE || v->ampenv.parameters.release))
 			tsf_voice_endquick(f, v);
-	if (f->channels) { TSF_FREE(f->channels->channels); TSF_FREE(f->channels); f->channels = TSF_NULL; }
+	if (f->channels) { TSF_FREE(f->channels); f->channels = TSF_NULL; }
 }
 
 TSFDEF int tsf_get_presetindex(const tsf* f, int bank, int preset_number)
@@ -1563,15 +1563,14 @@ static struct tsf_channel* tsf_channel_init(tsf* f, int channel)
 	if (f->channels && channel < f->channels->channelNum) return &f->channels->channels[channel];
 	if (!f->channels)
 	{
-		f->channels = (struct tsf_channels*)TSF_MALLOC(sizeof(struct tsf_channels));
+		f->channels = (struct tsf_channels*)TSF_MALLOC(sizeof(struct tsf_channels) + sizeof(struct tsf_channel) * channel);
 		f->channels->setupVoice = &tsf_channel_setup_voice;
-		f->channels->channels = NULL;
 		f->channels->channelNum = 0;
 		f->channels->activeChannel = 0;
 	}
+	else f->channels = (struct tsf_channels*)TSF_REALLOC(f->channels, sizeof(struct tsf_channels) + sizeof(struct tsf_channel) * channel);
 	i = f->channels->channelNum;
 	f->channels->channelNum = channel + 1;
-	f->channels->channels = (struct tsf_channel*)TSF_REALLOC(f->channels->channels, f->channels->channelNum * sizeof(struct tsf_channel));
 	for (; i <= channel; i++)
 	{
 		struct tsf_channel* c = &f->channels->channels[i];
