@@ -739,13 +739,13 @@ static void tsf_load_samples(float** fontSamples, unsigned int* fontSampleCount,
 {
 	// Read sample data into float format buffer.
 	float* out; unsigned int samplesLeft, samplesToRead, samplesToConvert;
-	samplesLeft = *fontSampleCount = chunkSmpl->size / sizeof(short);
+	samplesLeft = *fontSampleCount = chunkSmpl->size / (unsigned int)sizeof(short);
 	out = *fontSamples = (float*)TSF_MALLOC(samplesLeft * sizeof(float));
 	for (; samplesLeft; samplesLeft -= samplesToRead)
 	{
 		short sampleBuffer[1024], *in = sampleBuffer;;
 		samplesToRead = (samplesLeft > 1024 ? 1024 : samplesLeft);
-		stream->read(stream->data, sampleBuffer, samplesToRead * sizeof(short));
+		stream->read(stream->data, sampleBuffer, samplesToRead * (unsigned int)sizeof(short));
 
 		// Convert from signed 16-bit to float.
 		for (samplesToConvert = samplesToRead; samplesToConvert > 0; --samplesToConvert)
@@ -1358,7 +1358,7 @@ TSFDEF int tsf_active_voice_count(tsf* f)
 TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing)
 {
 	float *floatSamples;
-	int channelSamples = (f->outputmode == TSF_MONO ? 1 : 2) * samples, floatBufferSize = channelSamples * sizeof(float);
+	int channelSamples = (f->outputmode == TSF_MONO ? 1 : 2) * samples, floatBufferSize = channelSamples * (int)sizeof(float);
 	short* bufferEnd = buffer + channelSamples;
 	if (floatBufferSize > f->outputSampleSize)
 	{
