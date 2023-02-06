@@ -884,7 +884,7 @@ static int tsf_buffer_smpl(char **smplBuffer, unsigned int *smplLength, struct t
 
 // load s16 samples into f32 floatSamples
 static void tsf_convert_samples(short *samples, float *floatSamples, int sampleCount) {
-    int i;
+	int i;
 	for (i = 0; i < sampleCount; i++) {
 		floatSamples[i] = (float)(samples[i] / 32767.0);
 	}
@@ -894,7 +894,7 @@ static void tsf_convert_samples(short *samples, float *floatSamples, int sampleC
 static int tsf_decode_vorbis_samples(struct tsf_hydra *hydra, char *smplBuffer, float **fontSamples, int *fontSampleCount) {
 	float *shdrSamples[hydra->shdrNum];
 	unsigned int shdrBufferLengths[hydra->shdrNum];
-    int i;
+	int i;
 
 	for (i = 0; i < hydra->shdrNum; i++) {
 		shdrSamples[i] = TSF_NULL;
