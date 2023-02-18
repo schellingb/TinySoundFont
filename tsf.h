@@ -697,7 +697,7 @@ static void tsf_region_envtosecs(struct tsf_envelope* p, TSF_BOOL sustainIsGain)
 	// to keep the values in timecents so we can calculate it during startNote
 	if (!p->keynumToHold)  p->hold  = (p->hold  < -11950.0f ? 0.0f : tsf_timecents2Secsf(p->hold));
 	if (!p->keynumToDecay) p->decay = (p->decay < -11950.0f ? 0.0f : tsf_timecents2Secsf(p->decay));
-	
+
 	if (p->sustain < 0.0f) p->sustain = 0.0f;
 	else if (sustainIsGain) p->sustain = tsf_decibelsToGain(-p->sustain / 10.0f);
 	else p->sustain = 1.0f - (p->sustain / 1000.0f);
@@ -861,26 +861,121 @@ static int tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int font
 	return 1;
 }
 
-static int tsf_load_samples(float** fontSamples, unsigned int* fontSampleCount, struct tsf_riffchunk *chunkSmpl, struct tsf_stream* stream)
-{
-	// Read sample data into float format buffer.
-	float* out; unsigned int samplesLeft, samplesToRead, samplesToConvert;
-	samplesLeft = *fontSampleCount = chunkSmpl->size / sizeof(short);
-	out = *fontSamples = (float*)TSF_MALLOC(samplesLeft * sizeof(float));
-	if (!out) return 0;
-	for (; samplesLeft; samplesLeft -= samplesToRead)
-	{
-		short sampleBuffer[1024], *in = sampleBuffer;;
-		samplesToRead = (samplesLeft > 1024 ? 1024 : samplesLeft);
-		stream->read(stream->data, sampleBuffer, samplesToRead * sizeof(short));
+// buffer chunkSmpl into smplBuffer
+static int tsf_buffer_smpl(char **smplBuffer, unsigned int *smplLength, struct tsf_riffchunk *chunkSmpl, struct tsf_stream* stream) {
+	int remaining = chunkSmpl->size;
 
-		// Convert from signed 16-bit to float.
-		for (samplesToConvert = samplesToRead; samplesToConvert > 0; --samplesToConvert)
-			// If we ever need to compile for big-endian platforms, we'll need to byte-swap here.
-			*out++ = (float)(*in++ / 32767.0);
-	}
+	*smplBuffer = TSF_MALLOC(remaining);
+	*smplLength = remaining;
+
+	char *out = *smplBuffer;
+
+	if (!*smplBuffer) return 0;
+
+	do {
+		int readSize = remaining > 1024 ? 1024 : remaining;
+		stream->read(stream->data, out, readSize);
+		out += readSize;
+		remaining -= readSize;
+	} while (remaining > 0);
+
 	return 1;
 }
+
+// load s16 samples into f32 floatSamples
+static void tsf_convert_samples(short *samples, float *floatSamples, int sampleCount) {
+	int i;
+	for (i = 0; i < sampleCount; i++) {
+		floatSamples[i] = (float)(samples[i] / 32767.0);
+	}
+}
+
+#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
+static int tsf_decode_vorbis_samples(struct tsf_hydra *hydra, char *smplBuffer, float **fontSamples, int *fontSampleCount) {
+	float *shdrSamples[hydra->shdrNum];
+	unsigned int shdrBufferLengths[hydra->shdrNum];
+	int i;
+
+	for (i = 0; i < hydra->shdrNum; i++) {
+		shdrSamples[i] = TSF_NULL;
+
+		struct tsf_hydra_shdr *shdr = &hydra->shdrs[i];
+		int compressedSize = shdr->end - shdr->start;
+
+		if (compressedSize <= 0) {
+			continue;
+		}
+
+		short *samples = NULL;
+		int channels = 0;
+		int sampleRate = 0;
+
+		int sampleCount = stb_vorbis_decode_memory(
+			smplBuffer + shdr->start,
+			compressedSize,
+			&channels,
+			&sampleRate,
+			&samples
+		);
+
+		if (sampleCount < 0) {
+			return 0;
+		}
+
+		float *floatSamples = TSF_MALLOC(sampleCount * sizeof(float));
+
+		if (!floatSamples)  {
+			return 0;
+		}
+
+		tsf_convert_samples(samples, floatSamples, sampleCount);
+
+		// stb_vorbis already uses free and not TSF_ functions
+		free(samples);
+
+		*fontSampleCount += sampleCount;
+
+		shdrSamples[i] = floatSamples;
+		shdrBufferLengths[i] = sampleCount;
+	}
+
+	TSF_FREE(smplBuffer);
+	smplBuffer = TSF_NULL;
+
+	float *floatSamples = TSF_MALLOC(*fontSampleCount * sizeof(float));
+
+	if (!fontSamples) {
+		return 0;
+	}
+
+	unsigned int sampleBufferOffset = 0;
+
+	for (i = 0; i < hydra->shdrNum; i++) {
+		struct tsf_hydra_shdr *shdr = &hydra->shdrs[i];
+		int sampleCount = shdrBufferLengths[i];
+
+		shdr->start = sampleBufferOffset;
+		shdr->end = sampleBufferOffset + sampleCount;
+		shdr->startLoop += sampleBufferOffset;
+		shdr->endLoop += sampleBufferOffset;
+
+		if (shdrSamples[i]) {
+			for (int j = 0; j < sampleCount; j++) {
+				floatSamples[sampleBufferOffset + j] = shdrSamples[i][j];
+			}
+		}
+
+		free(shdrSamples[i]);
+		shdrSamples[i] = TSF_NULL;
+
+		sampleBufferOffset += sampleCount;
+	}
+
+	*fontSamples = floatSamples;
+
+	return 1;
+}
+#endif
 
 static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short active_segment, float outSampleRate)
 {
@@ -1239,6 +1334,8 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	struct tsf_riffchunk chunkHead;
 	struct tsf_riffchunk chunkList;
 	struct tsf_hydra hydra;
+	char* smplBuffer = TSF_NULL;
+	unsigned int smplLength = 0;
 	float* fontSamples = TSF_NULL;
 	unsigned int fontSampleCount = 0;
 
@@ -1282,9 +1379,9 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 		{
 			while (tsf_riffchunk_read(&chunkList, &chunk, stream))
 			{
-				if (TSF_FourCCEquals(chunk.id, "smpl") && !fontSamples && chunk.size >= sizeof(short))
+				if (TSF_FourCCEquals(chunk.id, "smpl") && !smplBuffer && chunk.size >= sizeof(short))
 				{
-					if (!tsf_load_samples(&fontSamples, &fontSampleCount, &chunk, stream)) goto out_of_memory;
+					if (!tsf_buffer_smpl(&smplBuffer, &smplLength, &chunk, stream)) goto out_of_memory;
 				}
 				else stream->skip(stream->data, chunk.size);
 			}
@@ -1295,12 +1392,32 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	{
 		//if (e) *e = TSF_INVALID_INCOMPLETE;
 	}
-	else if (fontSamples == TSF_NULL)
+	else if (smplBuffer == TSF_NULL)
 	{
 		//if (e) *e = TSF_INVALID_NOSAMPLEDATA;
 	}
 	else
 	{
+		int isSf3 = 0;
+
+#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
+		char *sampleHeader = smplBuffer + hydra.shdrs[0].start;
+
+		if (TSF_FourCCEquals(sampleHeader, "OggS")) {
+			isSf3 = 1;
+
+			if (!tsf_decode_vorbis_samples(&hydra, smplBuffer, &fontSamples, &fontSampleCount)) {
+				goto out_of_memory;
+			}
+		}
+#endif
+
+		if (!isSf3) {
+			fontSampleCount = smplLength / sizeof(short);
+			fontSamples = TSF_MALLOC(fontSampleCount * sizeof(float));
+			tsf_convert_samples((short*)smplBuffer, fontSamples, fontSampleCount);
+		}
+
 		res = (tsf*)TSF_MALLOC(sizeof(tsf));
 		if (!res) goto out_of_memory;
 		TSF_MEMSET(res, 0, sizeof(tsf));
@@ -1566,7 +1683,7 @@ TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing
 		tsf_render_float(f, floatSamples, channelSamples, TSF_FALSE);
 		samples -= channelSamples;
 
-		if (flag_mixing) 
+		if (flag_mixing)
 			while (buffer != bufferEnd)
 			{
 				float v = *floatSamples++;
