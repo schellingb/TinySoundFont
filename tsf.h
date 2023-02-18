@@ -861,121 +861,107 @@ static int tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int font
 	return 1;
 }
 
-// buffer chunkSmpl into smplBuffer
-static int tsf_buffer_smpl(char **smplBuffer, unsigned int *smplLength, struct tsf_riffchunk *chunkSmpl, struct tsf_stream* stream) {
-	int remaining = chunkSmpl->size;
-
-	*smplBuffer = TSF_MALLOC(remaining);
-	*smplLength = remaining;
-
-	char *out = *smplBuffer;
-
-	if (!*smplBuffer) return 0;
-
-	do {
-		int readSize = remaining > 1024 ? 1024 : remaining;
-		stream->read(stream->data, out, readSize);
-		out += readSize;
-		remaining -= readSize;
-	} while (remaining > 0);
-
-	return 1;
-}
-
-// load s16 samples into f32 floatSamples
-static void tsf_convert_samples(short *samples, float *floatSamples, int sampleCount) {
-	int i;
-	for (i = 0; i < sampleCount; i++) {
-		floatSamples[i] = (float)(samples[i] / 32767.0);
-	}
-}
-
 #ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
-static int tsf_decode_vorbis_samples(struct tsf_hydra *hydra, char *smplBuffer, float **fontSamples, int *fontSampleCount) {
-	float *shdrSamples[hydra->shdrNum];
-	unsigned int shdrBufferLengths[hydra->shdrNum];
+static int tsf_decode_samples_ogg(tsf_u8* smplBuffer, tsf_u32 smplLength, float** outSamples, unsigned int* outSampleCount, struct tsf_hydra *hydra)
+{
+	float *res = TSF_NULL;
+	unsigned int resNum = 0, resMax = 0, resInitial = (smplLength > 0x100000 ? (smplLength & ~0xFFFFF) : 65536);
 	int i;
-
-	for (i = 0; i < hydra->shdrNum; i++) {
-		shdrSamples[i] = TSF_NULL;
-
+	for (i = 0; i < hydra->shdrNum; i++)
+	{
+		stb_vorbis *v;
 		struct tsf_hydra_shdr *shdr = &hydra->shdrs[i];
-		int compressedSize = shdr->end - shdr->start;
+		const tsf_u8 *pSmpl = smplBuffer + shdr->start, *pSmplEnd = smplBuffer + shdr->end;
+		if (pSmplEnd <= pSmpl) continue;
 
-		if (compressedSize <= 0) {
-			continue;
-		}
+		// Use whatever stb_vorbis API that is available (either pull or push)
+		#if !defined(STB_VORBIS_NO_PULLDATA_API) && !defined(STB_VORBIS_NO_FROMMEMORY)
+		v = stb_vorbis_open_memory(pSmpl, (int)(pSmplEnd - pSmpl), TSF_NULL, TSF_NULL);
+		#else
+		{ int use, err; v = stb_vorbis_open_pushdata(pSmpl, (int)(pSmplEnd - pSmpl), &use, &err, TSF_NULL); pSmpl += use; }
+		#endif
+		if (v == TSF_NULL) { TSF_FREE(res); return 0; }
 
-		short *samples = NULL;
-		int channels = 0;
-		int sampleRate = 0;
+		// Fix up sample indices in shdr (end index is set after decoding)
+		shdr->start = resNum;
+		shdr->startLoop += resNum;
+		shdr->endLoop += resNum;
+		for (;;)
+		{
+			float** outputs; int n_samples;
 
-		int sampleCount = stb_vorbis_decode_memory(
-			smplBuffer + shdr->start,
-			compressedSize,
-			&channels,
-			&sampleRate,
-			&samples
-		);
+			// Decode one frame of vorbis samples with whatever stb_vorbis API that is available
+			#if !defined(STB_VORBIS_NO_PULLDATA_API) && !defined(STB_VORBIS_NO_FROMMEMORY)
+			n_samples = stb_vorbis_get_frame_float(v, TSF_NULL, &outputs);
+			if (!n_samples) break;
+			#else
+			if (pSmpl >= pSmplEnd) break;
+			{ int use = stb_vorbis_decode_frame_pushdata(v, pSmpl, (int)(pSmplEnd - pSmpl), TSF_NULL, &outputs, &n_samples); pSmpl += use; }
+			if (!n_samples) continue;
+			#endif
 
-		if (sampleCount < 0) {
-			return 0;
-		}
-
-		float *floatSamples = TSF_MALLOC(sampleCount * sizeof(float));
-
-		if (!floatSamples)  {
-			return 0;
-		}
-
-		tsf_convert_samples(samples, floatSamples, sampleCount);
-
-		// stb_vorbis already uses free and not TSF_ functions
-		free(samples);
-
-		*fontSampleCount += sampleCount;
-
-		shdrSamples[i] = floatSamples;
-		shdrBufferLengths[i] = sampleCount;
-	}
-
-	TSF_FREE(smplBuffer);
-	smplBuffer = TSF_NULL;
-
-	float *floatSamples = TSF_MALLOC(*fontSampleCount * sizeof(float));
-
-	if (!fontSamples) {
-		return 0;
-	}
-
-	unsigned int sampleBufferOffset = 0;
-
-	for (i = 0; i < hydra->shdrNum; i++) {
-		struct tsf_hydra_shdr *shdr = &hydra->shdrs[i];
-		int sampleCount = shdrBufferLengths[i];
-
-		shdr->start = sampleBufferOffset;
-		shdr->end = sampleBufferOffset + sampleCount;
-		shdr->startLoop += sampleBufferOffset;
-		shdr->endLoop += sampleBufferOffset;
-
-		if (shdrSamples[i]) {
-			for (int j = 0; j < sampleCount; j++) {
-				floatSamples[sampleBufferOffset + j] = shdrSamples[i][j];
+			// Expand our output buffer if necessary then copy over the decoded frame samples
+			resNum += n_samples;
+			if (resNum > resMax)
+			{
+				do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
+				res = (float*)TSF_REALLOC(res, resMax * sizeof(float));
+				if (!res) { stb_vorbis_close(v); return 0; }
 			}
+			TSF_MEMCPY(res + resNum - n_samples, outputs[0], n_samples * sizeof(float));
 		}
-
-		free(shdrSamples[i]);
-		shdrSamples[i] = TSF_NULL;
-
-		sampleBufferOffset += sampleCount;
+		shdr->end = resNum;
+		stb_vorbis_close(v);
 	}
 
-	*fontSamples = floatSamples;
-
-	return 1;
+	// Trim the sample buffer down then return success (unless out of memory)
+	res = (float*)TSF_REALLOC(res, resNum * sizeof(float));
+	*outSamples = res;
+	*outSampleCount = resNum;
+	return (res ? 1 : 0);
 }
 #endif
+
+static int tsf_decode_samples(tsf_u8* smplBuffer, tsf_u32 smplLength, float** outSamples, unsigned int* outSampleCount, struct tsf_hydra *hydra)
+{
+	float *out; const short *in;
+
+	#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
+	if (TSF_FourCCEquals(smplBuffer, "OggS"))
+		return tsf_decode_samples_ogg(smplBuffer, smplLength, outSamples, outSampleCount, hydra);
+	#endif
+
+	// Inline convert the samples from short to float (buffer was allocated big enough in tsf_load_samples)
+	*outSamples = (float*)smplBuffer;
+	*outSampleCount = smplLength / sizeof(short);
+	for (in = (short*)smplBuffer + *outSampleCount, out = *outSamples + *outSampleCount; in != (short*)smplBuffer;)
+		*(--out) = (float)(*(--in) / 32767.0);
+	return 1;
+}
+
+static int tsf_load_samples(tsf_u8** smplBuffer, tsf_u32 smplLength, struct tsf_stream* stream)
+{
+	#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
+	// With OGG Vorbis support scan for a specific 4 byte sample header first
+	if (smplLength >= sizeof(tsf_fourcc))
+	{
+		// If the format is not OGG the buffer is made large enough to hold the decoded float samples
+		tsf_fourcc format;
+		stream->read(stream->data, &format, sizeof(tsf_fourcc));
+		if (TSF_FourCCEquals(format, "OggS"))
+			*smplBuffer = (tsf_u8*)TSF_MALLOC(smplLength);
+		else
+			*smplBuffer = (tsf_u8*)TSF_MALLOC(smplLength / sizeof(short) * sizeof(float));
+		if (!*smplBuffer) return 0;
+		memcpy(*smplBuffer, &format, sizeof(tsf_fourcc));
+		return stream->read(stream->data, (char*)*smplBuffer + sizeof(tsf_fourcc), smplLength - sizeof(tsf_fourcc));
+	}
+	#endif
+
+	// Allocate enough to hold the decoded float samples (see tsf_decode_samples)
+	*smplBuffer = (tsf_u8*)TSF_MALLOC(smplLength / sizeof(short) * sizeof(float));
+	return (*smplBuffer ? stream->read(stream->data, *smplBuffer, smplLength) : 0);
+}
 
 static void tsf_voice_envelope_nextsegment(struct tsf_voice_envelope* e, short active_segment, float outSampleRate)
 {
@@ -1334,10 +1320,8 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	struct tsf_riffchunk chunkHead;
 	struct tsf_riffchunk chunkList;
 	struct tsf_hydra hydra;
-	char* smplBuffer = TSF_NULL;
+	tsf_u8* smplBuffer = TSF_NULL;
 	unsigned int smplLength = 0;
-	float* fontSamples = TSF_NULL;
-	unsigned int fontSampleCount = 0;
 
 	if (!tsf_riffchunk_read(TSF_NULL, &chunkHead, stream) || !TSF_FourCCEquals(chunkHead.id, "sfbk"))
 	{
@@ -1381,7 +1365,8 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 			{
 				if (TSF_FourCCEquals(chunk.id, "smpl") && !smplBuffer && chunk.size >= sizeof(short))
 				{
-					if (!tsf_buffer_smpl(&smplBuffer, &smplLength, &chunk, stream)) goto out_of_memory;
+					smplLength = chunk.size;
+					if (!tsf_load_samples(&smplBuffer, smplLength, stream)) goto out_of_memory;
 				}
 				else stream->skip(stream->data, chunk.size);
 			}
@@ -1398,32 +1383,13 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	}
 	else
 	{
-		int isSf3 = 0;
-
-#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
-		char *sampleHeader = smplBuffer + hydra.shdrs[0].start;
-
-		if (TSF_FourCCEquals(sampleHeader, "OggS")) {
-			isSf3 = 1;
-
-			if (!tsf_decode_vorbis_samples(&hydra, smplBuffer, &fontSamples, &fontSampleCount)) {
-				goto out_of_memory;
-			}
-		}
-#endif
-
-		if (!isSf3) {
-			fontSampleCount = smplLength / sizeof(short);
-			fontSamples = TSF_MALLOC(fontSampleCount * sizeof(float));
-			tsf_convert_samples((short*)smplBuffer, fontSamples, fontSampleCount);
-		}
-
+		float* fontSamples; unsigned int fontSampleCount;
+		if (!tsf_decode_samples(smplBuffer, smplLength, &fontSamples, &fontSampleCount, &hydra)) goto out_of_memory;
+		if (fontSamples == (float*)smplBuffer) smplBuffer = TSF_NULL; // Was converted inline, don't free below
 		res = (tsf*)TSF_MALLOC(sizeof(tsf));
-		if (!res) goto out_of_memory;
-		TSF_MEMSET(res, 0, sizeof(tsf));
-		if (!tsf_load_presets(res, &hydra, fontSampleCount)) goto out_of_memory;
+		if (res) TSF_MEMSET(res, 0, sizeof(tsf));
+		if (!res || !tsf_load_presets(res, &hydra, fontSampleCount)) { TSF_FREE(fontSamples); goto out_of_memory; }
 		res->fontSamples = fontSamples;
-		fontSamples = TSF_NULL; //don't free below
 		res->outSampleRate = 44100.0f;
 	}
 	if (0)
@@ -1436,7 +1402,7 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 	TSF_FREE(hydra.phdrs); TSF_FREE(hydra.pbags); TSF_FREE(hydra.pmods);
 	TSF_FREE(hydra.pgens); TSF_FREE(hydra.insts); TSF_FREE(hydra.ibags);
 	TSF_FREE(hydra.imods); TSF_FREE(hydra.igens); TSF_FREE(hydra.shdrs);
-	TSF_FREE(fontSamples);
+	TSF_FREE(smplBuffer);
 	return res;
 }
 
