@@ -121,7 +121,7 @@ enum TSFOutputMode
 	// Two channels with all samples for the left channel first then right
 	TSF_STEREO_UNWEAVED,
 	// A single channel (stereo instruments are mixed into center)
-	TSF_MONO,
+	TSF_MONO
 };
 
 // Thread safety:
@@ -1610,7 +1610,7 @@ static struct tsf_channel* tsf_channel_init(tsf* f, int channel)
 	if (!f->channels)
 	{
 		f->channels = (struct tsf_channels*)TSF_MALLOC(sizeof(struct tsf_channels) + sizeof(struct tsf_channel) * channel);
-		if (!f->channels) return NULL;
+		if (!f->channels) return TSF_NULL;
 		f->channels->setupVoice = &tsf_channel_setup_voice;
 		f->channels->channelNum = 0;
 		f->channels->activeChannel = 0;
@@ -1618,7 +1618,7 @@ static struct tsf_channel* tsf_channel_init(tsf* f, int channel)
 	else
 	{
 		struct tsf_channels *newChannels = (struct tsf_channels*)TSF_REALLOC(f->channels, sizeof(struct tsf_channels) + sizeof(struct tsf_channel) * channel);
-		if (!newChannels) return NULL;
+		if (!newChannels) return TSF_NULL;
 		f->channels = newChannels;
 	}
 	i = f->channels->channelNum;
