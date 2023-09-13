@@ -1762,7 +1762,7 @@ static void tsf_channel_applypitch(tsf* f, int channel, struct tsf_channel* c)
 	struct tsf_voice *v, *vEnd;
 	float pitchShift = (c->pitchWheel == 8192 ? c->tuning : ((c->pitchWheel / 16383.0f * c->pitchRange * 2.0f) - c->pitchRange + c->tuning));
 	for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
-		if (v->playingChannel == channel && v->playingPreset != -1)
+		if (v->playingPreset != -1 && v->playingChannel == channel)
 			tsf_voice_calcpitchratio(v, pitchShift, f->outSampleRate);
 }
 
@@ -1841,7 +1841,7 @@ TSFDEF int tsf_channel_set_volume(tsf* f, int channel, float volume)
 	if (!c) return 0;
 	if (gainDB == c->gainDB) return 1;
 	for (v = f->voices, vEnd = v + f->voiceNum, gainDBChange = gainDB - c->gainDB; v != vEnd; v++)
-		if (v->playingChannel == channel && v->playingPreset != -1)
+		if (v->playingPreset != -1 && v->playingChannel == channel)
 			v->noteGainDB += gainDBChange;
 	c->gainDB = gainDB;
 	return 1;
