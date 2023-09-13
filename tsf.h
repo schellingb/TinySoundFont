@@ -863,9 +863,9 @@ static int tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int font
 }
 
 #ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
-static TSF_BOOL tsf_decode_ogg(const tsf_u8 *pSmpl, const tsf_u8 *pSmplEnd, float** pRes, tsf_u32* pResNum, tsf_u32* pResMax, tsf_u32 resInitial)
+static int tsf_decode_ogg(const tsf_u8 *pSmpl, const tsf_u8 *pSmplEnd, float** pRes, tsf_u32* pResNum, tsf_u32* pResMax, tsf_u32 resInitial)
 {
-	float* res = *pRes; tsf_u32 resNum = *pResNum; tsf_u32 resMax = *pResMax; stb_vorbis *v;
+	float *res = *pRes, *oldres; tsf_u32 resNum = *pResNum; tsf_u32 resMax = *pResMax; stb_vorbis *v;
 
 	// Use whatever stb_vorbis API that is available (either pull or push)
 	#if !defined(STB_VORBIS_NO_PULLDATA_API) && !defined(STB_VORBIS_NO_FROMMEMORY)
@@ -873,7 +873,7 @@ static TSF_BOOL tsf_decode_ogg(const tsf_u8 *pSmpl, const tsf_u8 *pSmplEnd, floa
 	#else
 	{ int use, err; v = stb_vorbis_open_pushdata(pSmpl, (int)(pSmplEnd - pSmpl), &use, &err, TSF_NULL); pSmpl += use; }
 	#endif
-	if (v == TSF_NULL) return TSF_FALSE;
+	if (v == TSF_NULL) return 0;
 
 	for (;;)
 	{
@@ -894,21 +894,21 @@ static TSF_BOOL tsf_decode_ogg(const tsf_u8 *pSmpl, const tsf_u8 *pSmplEnd, floa
 		if (resNum > resMax)
 		{
 			do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
-			res = (float*)TSF_REALLOC(res, resMax * sizeof(float));
-			if (!res) { stb_vorbis_close(v); return 0; }
+			res = (float*)TSF_REALLOC((oldres = res), resMax * sizeof(float));
+			if (!res) { TSF_FREE(oldres); stb_vorbis_close(v); return 0; }
 		}
 		TSF_MEMCPY(res + resNum - n_samples, outputs[0], n_samples * sizeof(float));
 	}
 	stb_vorbis_close(v);
 	*pRes = res; *pResNum = resNum; *pResMax = resMax;
-	return TSF_TRUE;
+	return 1;
 }
 
 static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, unsigned int* pSmplCount, struct tsf_hydra *hydra)
 {
 	const tsf_u8* smplBuffer = (const tsf_u8*)rawBuffer;
 	tsf_u32 smplLength = *pSmplCount, resNum = 0, resMax = 0, resInitial = (smplLength > 0x100000 ? (smplLength & ~0xFFFFF) : 65536);
-	float *res = TSF_NULL;
+	float *res = TSF_NULL, *oldres;
 	int i;
 	for (i = 0; i < hydra->shdrNum; i++)
 	{
@@ -948,8 +948,8 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 			if (resNum > resMax)
 			{
 				do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
-				res = (float*)TSF_REALLOC(res, resMax * sizeof(float));
-				if (!res) { return 0; }
+				res = (float*)TSF_REALLOC((oldres = res), resMax * sizeof(float));
+				if (!res) { TSF_FREE(oldres); return 0; }
 			}
 
 			// Convert the samples from short to float
@@ -959,7 +959,7 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 	}
 
 	// Trim the sample buffer down then return success (unless out of memory)
-	res = (float*)TSF_REALLOC(res, resNum * sizeof(float));
+	if (!(*pFloatBuffer = (float*)TSF_REALLOC(res, resNum * sizeof(float)))) *pFloatBuffer = res;
 	*pFloatBuffer = res;
 	*pSmplCount = resNum;
 	return (res ? 1 : 0);
@@ -970,15 +970,16 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 {
 	#ifdef STB_VORBIS_INCLUDE_STB_VORBIS_H
 	// With OGG Vorbis support we cannot pre-allocate the memory for tsf_decode_sf3_samples
+	tsf_u32 resNum, resMax; float* oldres;
 	*pSmplCount = chunkSmpl->size;
 	*pRawBuffer = (void*)TSF_MALLOC(*pSmplCount);
 	if (!*pRawBuffer || !stream->read(stream->data, *pRawBuffer, chunkSmpl->size)) return 0;
 	if (chunkSmpl->id[3] != 'o') return 1;
 
 	// Decode custom .sfo 'smpo' format where all samples are in a single ogg stream
-	tsf_u32 resNum = 0, resMax = 0, resInitial = 65536;
-	if (!tsf_decode_ogg((tsf_u8*)*pRawBuffer, (tsf_u8*)*pRawBuffer + chunkSmpl->size, pFloatBuffer, &resNum, &resMax, resInitial)) return 0;
-	*pFloatBuffer = (float*)TSF_REALLOC(*pFloatBuffer, resNum * sizeof(float));
+	resNum = resMax = 0;
+	if (!tsf_decode_ogg((tsf_u8*)*pRawBuffer, (tsf_u8*)*pRawBuffer + chunkSmpl->size, pFloatBuffer, &resNum, &resMax, 65536)) return 0;
+	if (!(*pFloatBuffer = (float*)TSF_REALLOC((oldres = *pFloatBuffer), resNum * sizeof(float)))) *pFloatBuffer = oldres;
 	*pSmplCount = resNum;
 	return (*pFloatBuffer ? 1 : 0);
 	#else
