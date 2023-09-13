@@ -993,8 +993,8 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	#endif
 }
 
-static int tsf_voice_envelope_release_samples(
-		struct tsf_voice_envelope* e, float outSampleRate) {
+static int tsf_voice_envelope_release_samples(struct tsf_voice_envelope* e, float outSampleRate)
+{
 	return (int)((e->parameters.release <= 0 ? TSF_FASTRELEASETIME : e->parameters.release) * outSampleRate);
 }
 
@@ -1568,36 +1568,31 @@ TSFDEF int tsf_note_on(tsf* f, int preset_index, int key, float vel)
 
 		if (!voice)
 		{
-			struct tsf_voice* newVoices;
 			if (f->maxVoiceNum)
 			{
-				// Voices have been pre-allocated and limited to a maximum.
-				// Try to kill a voice off in its release envelope:
-				int bestKillReleaseSamplePos = 0;
-				struct tsf_voice *bestKill = NULL;
-				v = f->voices;
-				for (; v != vEnd; v++) {
-					if (v->ampenv.segment == TSF_SEGMENT_RELEASE) {
-						int releaseSamplesDone = tsf_voice_envelope_release_samples(
-							&v->ampenv, f->outSampleRate
-						) - v->ampenv.samplesUntilNextSegment;
-						if (bestKill != NULL && releaseSamplesDone <= bestKillReleaseSamplePos)
+				// Voices have been pre-allocated and limited to a maximum, try to kill a voice off in its release envelope
+				int bestKillReleaseSamplePos = -999999999;
+				for (v = f->voices; v != vEnd; v++)
+				{
+					if (v->ampenv.segment == TSF_SEGMENT_RELEASE)
+					{
+						// We're looking for the voice furthest into its release
+						int releaseSamplesDone = tsf_voice_envelope_release_samples(&v->ampenv, f->outSampleRate) - v->ampenv.samplesUntilNextSegment;
+						if (releaseSamplesDone > bestKillReleaseSamplePos)
 						{
-							continue;
+							bestKillReleaseSamplePos = releaseSamplesDone;
+							voice = v;
 						}
-						// We're looking for the voice furthest into its release:
-						bestKill = v;
-						bestKillReleaseSamplePos = releaseSamplesDone;
 					}
-				}
-				if (bestKill) {
-					tsf_voice_kill(bestKill);
-					voice = bestKill;
 				}
 				if (!voice)
 					continue;
-			} else {
+				tsf_voice_kill(voice);
+			}
+			else
+			{
 				// Allocate more voices so we don't need to kill one off.
+				struct tsf_voice* newVoices;
 				f->voiceNum += 4;
 				newVoices = (struct tsf_voice*)TSF_REALLOC(f->voices, f->voiceNum * sizeof(struct tsf_voice));
 				if (!newVoices) return 0;
