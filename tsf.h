@@ -984,7 +984,7 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	#else
 	// Inline convert the samples from short to float
 	float *res, *out; const short *in;
-	*pSmplCount = chunkSmpl->size / sizeof(short);
+	*pSmplCount = chunkSmpl->size / (unsigned int)sizeof(short);
 	*pFloatBuffer = (float*)TSF_MALLOC(*pSmplCount * sizeof(float));
 	if (!*pFloatBuffer || !stream->read(stream->data, *pFloatBuffer, chunkSmpl->size)) return 0;
 	for (res = *pFloatBuffer, out = res + *pSmplCount, in = (short*)res + *pSmplCount; out != res;)
