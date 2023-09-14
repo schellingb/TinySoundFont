@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <ProjectName>WebMIDIPlayer</ProjectName>
+    <DataAssets>Data</DataAssets>
+    <ZillaLibDir>../ZillaLib</ZillaLibDir>
+    <ProjectGuid>{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}</ProjectGuid>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="WebAssembly-Debug|Win32">
+      <Configuration>WebAssembly-Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="WebAssembly-Release|Win32">
+      <Configuration>WebAssembly-Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <Import Project="$(ZillaLibDir)/ZillaApp-vs.props" />
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClInclude Include="tml.h" />
+    <ClInclude Include="tsf.h" />
+    <ResourceCompile Include="WebMIDIPlayer.rc" />
+  </ItemGroup>
+</Project>

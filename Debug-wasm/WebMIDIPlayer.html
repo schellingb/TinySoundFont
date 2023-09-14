@@ -1,0 +1,60 @@
+﻿<!doctype html>
+<html lang="en-us">
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<title>TinySoundFont MIDI Player</title>
+</head>
+<body style="background:#CCCCCC;font-family:sans-serif">
+	<h1 style="text-align:center">TinySoundFont HTML5 MIDI Player</h1>
+	<div style="text-align:center;margin:20px">Made with <a href="https://github.com/schellingb/TinySoundFont">TinySoundFont</a>, <a href="https://github.com/schellingb/TinySoundFont">TinyMidiLoader</a> and <a href="https://github.com/schellingb/ZillaLib">ZillaLib Multimedia Framework</a><br>The source of this player is also <a href="https://github.com/schellingb/TinySoundFont/tree/WebMIDIPlayer">available on GitHub</a>.</div>
+	<canvas id="zl_canvas" style="display:block;margin:0 auto 20px;border:2px solid black" oncontextmenu="event.preventDefault()" width="1" height="320"></canvas>
+	<form style="display:block;text-align:center;margin:20px">Load Midi:&nbsp;&nbsp;<input type="file" onchange="try{if(window.load)load(2, this)}catch(e){alert('Browser not supported')}"></form>
+	<form style="display:block;text-align:center;margin:20px">(Optional) Load other SoundFont:&nbsp;&nbsp;<input type="file" onchange="try{if(window.load)load(1, this)}catch(e){alert('Browser not supported')}"></form>
+</body>
+<script type='text/javascript'>
+var ZL =
+{
+	canvas: document.getElementById('zl_canvas'),
+	requestWidth: 960,
+	requestHeight: 320,
+	openUrl: function(url) { },
+	print: function(text) { },
+	error: function(code, msg)
+	{
+		var L = function(code)
+		{
+			if (code == 'BOOT') return 'Error during startup. Your browser might not support WebAudio/ASM.JS. Please update it to the latest version.';
+			if (code == 'WEBGL') return 'Your browser or graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br>Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.';
+			if (code == 'CRASH') return 'The application crashed.';
+			if (code == 'MEM') return 'The application ran out of memory.';
+		};
+		ZL.canvas.outerHTML = '<div style="text-align:center;background-color:#FFF;color:#000;padding:1.5em;width:540px;margin:2em auto">' + L(code) + '<br><br>(' + msg + ')</div>';
+	},
+};
+function load(type, field, contents)
+{
+	if (!ZL) return;
+	var isValid = false;
+	if (!contents)
+	{
+		var file = (field && field.files && field.files.length > 0 ? field.files[0] : undefined)
+		if (!file) return;
+		var reader = new FileReader();
+		reader.onloadend = function(evt) { load(type, field, new Uint8Array(evt.target.result)); };
+		reader.readAsArrayBuffer(file);
+		return;
+	}
+
+	var fn = ZL.malloc_string(field.files[0].name);
+	var ptr = ZL.malloc_array(contents);
+	if (type == 1 && !ZL.asm.WMP_LoadSoundFont(fn, ptr, contents.length)) alert('Error loading SoundFont file');
+	if (type == 2 && !ZL.asm.WMP_LoadMidi(fn, ptr, contents.length)) alert('Error loading MIDI file');
+	ZL.asm.free(ptr);
+	ZL.asm.free(fn);
+}
+</script>
+<script src="WebMIDIPlayer_Files.js" type="text/javascript"></script>
+<script src="WebMIDIPlayer.js" type="text/javascript"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2012
+VisualStudioVersion = 14.0.0.0
+MinimumVisualStudioVersion = 12.0.0.0
+Project("{CA1F7F6A-DA4F-06A0-3266-53DC9807F07F}") = "WebMIDIPlayer", "WebMIDIPlayer-vs.vcxproj", "{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}"
+EndProject
+Project("{CA1F7F6A-DA4F-06A0-3266-53DC9807F07F}") = "ZillaLib", "..\ZillaLib\ZillaLib-vs.vcxproj", "{2177A217-7A21-77A2-177A-2177A2177777}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+		WebAssembly-Debug|Win32 = WebAssembly-Debug|Win32
+		WebAssembly-Debug|x64 = WebAssembly-Debug|x64
+		WebAssembly-Release|Win32 = WebAssembly-Release|Win32
+		WebAssembly-Release|x64 = WebAssembly-Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Debug|Win32.ActiveCfg = Debug|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Debug|Win32.Build.0 = Debug|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Release|Win32.ActiveCfg = Release|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Release|Win32.Build.0 = Release|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Debug|x64.ActiveCfg = Debug|x64
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Debug|x64.Build.0 = Debug|x64
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Release|x64.ActiveCfg = Release|x64
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.Release|x64.Build.0 = Release|x64
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Debug|Win32.ActiveCfg = WebAssembly-Debug|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Debug|Win32.Build.0 = WebAssembly-Debug|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Debug|x64.ActiveCfg = WebAssembly-Debug|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Debug|x64.Build.0 = WebAssembly-Debug|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Release|Win32.ActiveCfg = WebAssembly-Release|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Release|Win32.Build.0 = WebAssembly-Release|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Release|x64.ActiveCfg = WebAssembly-Release|Win32
+		{FFD995CB-1972-F55D-BCFB-73DCF4ECA439}.WebAssembly-Release|x64.Build.0 = WebAssembly-Release|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.Debug|Win32.Build.0 = Debug|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.Release|Win32.ActiveCfg = Release|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.Release|Win32.Build.0 = Release|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.Debug|x64.ActiveCfg = Debug|x64
+		{2177A217-7A21-77A2-177A-2177A2177777}.Debug|x64.Build.0 = Debug|x64
+		{2177A217-7A21-77A2-177A-2177A2177777}.Release|x64.ActiveCfg = Release|x64
+		{2177A217-7A21-77A2-177A-2177A2177777}.Release|x64.Build.0 = Release|x64
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Debug|Win32.ActiveCfg = WebAssembly-Debug|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Debug|Win32.Build.0 = WebAssembly-Debug|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Debug|x64.ActiveCfg = WebAssembly-Debug|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Debug|x64.Build.0 = WebAssembly-Debug|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Release|Win32.ActiveCfg = WebAssembly-Release|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Release|Win32.Build.0 = WebAssembly-Release|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Release|x64.ActiveCfg = WebAssembly-Release|Win32
+		{2177A217-7A21-77A2-177A-2177A2177777}.WebAssembly-Release|x64.Build.0 = WebAssembly-Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

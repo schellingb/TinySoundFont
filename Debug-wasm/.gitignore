@@ -1,0 +1,6 @@
+*.js
+*.bc
+*.o
+*.gz
+*.wasm
+*.zip
