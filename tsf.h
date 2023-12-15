@@ -909,15 +909,14 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 	const tsf_u8* smplBuffer = (const tsf_u8*)rawBuffer;
 	tsf_u32 smplLength = *pSmplCount, resNum = 0, resMax = 0, resInitial = (smplLength > 0x100000 ? (smplLength & ~0xFFFFF) : 65536);
 	float *res = TSF_NULL, *oldres;
-	int i;
-	for (i = 0; i < hydra->shdrNum; i++)
+	int i, shdrLast = hydra->shdrNum - 1, is_sf3 = 0;
+	for (i = 0; i <= shdrLast; i++)
 	{
 		struct tsf_hydra_shdr *shdr = &hydra->shdrs[i];
-		if (shdr->end <= shdr->start) continue;
 		if (shdr->sampleType & 0x30) // compression flags (sometimes Vorbis flag)
 		{
 			const tsf_u8 *pSmpl = smplBuffer + shdr->start, *pSmplEnd = smplBuffer + shdr->end;
-			if (!TSF_FourCCEquals(pSmpl, "OggS"))
+			if (pSmpl + 4 > pSmplEnd || !TSF_FourCCEquals(pSmpl, "OggS"))
 			{
 				shdr->start = shdr->end = shdr->startLoop = shdr->endLoop = 0;
 				continue;
@@ -929,22 +928,26 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 			shdr->endLoop += resNum;
 			if (!tsf_decode_ogg(pSmpl, pSmplEnd, &res, &resNum, &resMax, resInitial)) { TSF_FREE(res); return 0; }
 			shdr->end = resNum;
+			is_sf3 = 1;
 		}
 		else // raw PCM sample
 		{
-			tsf_u32 fix_offset = resNum - shdr->start;
-			tsf_u32 n_samples = ((shdr->startLoop < shdr->endLoop && shdr->endLoop > shdr->startLoop) ? shdr->endLoop : shdr->end) - shdr->start;
-			float *out; short* in = (short*)smplBuffer + shdr->start, *inEnd = in + n_samples;
-			if ((tsf_u8*)inEnd > (smplBuffer + smplLength)) inEnd = (short*)smplBuffer + smplLength/sizeof(short);
-
-			// Fix up sample indices in shdr (end index is set after decoding)
-			shdr->start = resNum;
-			shdr->end += fix_offset;
-			shdr->startLoop += fix_offset;
-			shdr->endLoop += fix_offset;
+			float *out; short *in = (short*)smplBuffer + resNum, *inEnd; tsf_u32 oldResNum = resNum;
+			if (is_sf3) // Fix up sample indices in shdr
+			{
+				tsf_u32 fix_offset = resNum - shdr->start;
+				in -= fix_offset;
+				shdr->start = resNum;
+				shdr->end += fix_offset;
+				shdr->startLoop += fix_offset;
+				shdr->endLoop += fix_offset;
+			}
+			inEnd = in + ((shdr->end >= shdr->endLoop ? shdr->end : shdr->endLoop) - resNum);
+			if (i == shdrLast || (tsf_u8*)inEnd > (smplBuffer + smplLength)) inEnd = (short*)(smplBuffer + smplLength);
+			if (inEnd <= in) continue;
 
 			// expand our output buffer if necessary then convert the PCM data from short to float
-			resNum += n_samples;
+			resNum += (tsf_u32)(inEnd - in);
 			if (resNum > resMax)
 			{
 				do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
@@ -953,7 +956,7 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 			}
 
 			// Convert the samples from short to float
-			for (out = res + resNum - n_samples; in != inEnd;)
+			for (out = res + oldResNum; in < inEnd;)
 				*(out++) = (float)(*(in++) / 32767.0);
 		}
 	}
