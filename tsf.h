@@ -448,7 +448,7 @@ struct tsf_preset
 
 struct tsf_voice
 {
-	int playingPreset, playingKey, playingChannel;
+	int playingPreset, playingKey, playingChannel, heldSustain;
 	struct tsf_region* region;
 	double pitchInputTimecents, pitchOutputFactor;
 	double sourceSamplePosition;
@@ -461,7 +461,7 @@ struct tsf_voice
 
 struct tsf_channel
 {
-	unsigned short presetIndex, bank, pitchWheel, midiPan, midiVolume, midiExpression, midiRPN, midiData;
+	unsigned short presetIndex, bank, pitchWheel, midiPan, midiVolume, midiExpression, midiRPN, midiData, sustain;
 	float panOffset, gainDB, pitchRange, tuning;
 };
 
@@ -1609,6 +1609,7 @@ TSFDEF int tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		voice->playingPreset = preset_index;
 		voice->playingKey = key;
 		voice->playIndex = voicePlayIndex;
+		voice->heldSustain = 0;
 		voice->noteGainDB = f->globalGainDB - region->attenuation - tsf_gainToDecibels(1.0f / vel);
 
 		if (f->channels)
@@ -1772,7 +1773,7 @@ static struct tsf_channel* tsf_channel_init(tsf* f, int channel)
 	for (; i <= channel; i++)
 	{
 		struct tsf_channel* c = &f->channels->channels[i];
-		c->presetIndex = c->bank = 0;
+		c->presetIndex = c->bank = c->sustain = 0;
 		c->pitchWheel = c->midiPan = 8192;
 		c->midiVolume = c->midiExpression = 16383;
 		c->midiRPN = 0xFFFF;
@@ -1905,20 +1906,42 @@ TSFDEF int tsf_channel_set_tuning(tsf* f, int channel, float tuning)
 	return 1;
 }
 
+TSFDEF int tsf_channel_set_sustain(tsf* f, int channel, int sustain)
+{
+	struct tsf_channel *c = tsf_channel_init(f, channel);
+	if (!c) return 0;
+	if (c->sustain == sustain) return 1;
+	c->sustain = sustain;
+	// Turning on sustain does no action now, just starts note_off behaving differently
+	if (sustain) return 1;
+	// Turning off sustain, actually end voices that got a note_off and were set to heldSustain status
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	for (; v != vEnd; v++)
+		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE && v->heldSustain)
+			tsf_voice_end(f, v);
+	return 1;
+}
+
 TSFDEF int tsf_channel_note_on(tsf* f, int channel, int key, float vel)
 {
 	if (!f->channels || channel >= f->channels->channelNum) return 1;
 	f->channels->activeChannel = channel;
+	if (!vel)
+	{
+		tsf_channel_note_off(f, channel, key);
+		return 1;
+	}
 	return tsf_note_on(f, f->channels->channels[channel].presetIndex, key, vel);
 }
 
 TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 {
+	int sustain = f->channels->channels[channel].sustain;
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching channel, key and look up the smallest play index
-		if (v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE) continue;
+		if (v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE || v->heldSustain) continue;
 		else if (!vMatchFirst || v->playIndex < vMatchFirst->playIndex) vMatchFirst = vMatchLast = v;
 		else if (v->playIndex == vMatchFirst->playIndex) vMatchLast = v;
 	}
@@ -1928,12 +1951,17 @@ TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 		//Stop all voices with matching channel, key and the smallest play index which was enumerated above
 		if (v != vMatchFirst && v != vMatchLast &&
 			(v->playIndex != vMatchFirst->playIndex || v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE)) continue;
-		tsf_voice_end(f, v);
+		// Don't turn off if sustain is active, just mark as held by sustain so we don't forget it
+		if (sustain)
+			v->heldSustain = 1;
+		else
+			tsf_voice_end(f, v);
 	}
 }
 
 TSFDEF void tsf_channel_note_off_all(tsf* f, int channel)
 {
+	// Ignore sustain channel settings, note_off_all overrides
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE)
@@ -1968,6 +1996,7 @@ TSFDEF int tsf_channel_midi_control(tsf* f, int channel, int controller, int con
 		case 100 /*RPN_LSB*/         : c->midiRPN = (unsigned short)(((c->midiRPN == 0xFFFF ? 0 : c->midiRPN) & 0x3F80) |  control_value); return 1;
 		case  98 /*NRPN_LSB*/        : c->midiRPN = 0xFFFF; return 1;
 		case  99 /*NRPN_MSB*/        : c->midiRPN = 0xFFFF; return 1;
+		case  64 /*SUSTAIN*/         : tsf_channel_set_sustain(f, channel, control_value >= 64); return 1;
 		case 120 /*ALL_SOUND_OFF*/   : tsf_channel_sounds_off_all(f, channel); return 1;
 		case 123 /*ALL_NOTES_OFF*/   : tsf_channel_note_off_all(f, channel);   return 1;
 		case 121 /*ALL_CTRL_OFF*/    :
