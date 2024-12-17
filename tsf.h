@@ -1850,7 +1850,7 @@ TSFDEF int tsf_channel_set_pan(tsf* f, int channel, float pan)
 	struct tsf_channel *c = tsf_channel_init(f, channel);
 	if (!c) return 0;
 	for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
-		if (v->playingChannel == channel && v->playingPreset != -1)
+		if (v->playingPreset != -1 && v->playingChannel == channel)
 		{
 			float newpan = v->region->pan + pan - 0.5f;
 			if      (newpan <= -0.5f) { v->panFactorLeft = 1.0f; v->panFactorRight = 0.0f; }
