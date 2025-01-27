@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
 	tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0);
 
 	// Set the SoundFont rendering output mode
-	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, 0.0f);
+	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, -10.0f);
 
 	// Request the desired audio output format
 	if (SDL_OpenAudio(&OutputAudioSpec, TSF_NULL) < 0)
