@@ -206,6 +206,7 @@ TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing
 //   pitch_wheel: pitch wheel position 0 to 16383 (default 8192 unpitched)
 //   pitch_range: range of the pitch wheel in semitones (default 2.0, total +/- 2 semitones)
 //   tuning: tuning of all playing voices in semitones (default 0.0, standard (A440) tuning)
+//   flag_sustain: 0 to end notes that were held sustained and disable holding sustain otherwise enable it
 //   (tsf_set_preset_number and set_bank_preset return 0 if preset does not exist, otherwise 1)
 //   (tsf_channel_set_... return 0 if a new channel needed allocation and that failed, otherwise 1)
 TSFDEF int tsf_channel_set_presetindex(tsf* f, int channel, int preset_index);
@@ -217,6 +218,7 @@ TSFDEF int tsf_channel_set_volume(tsf* f, int channel, float volume);
 TSFDEF int tsf_channel_set_pitchwheel(tsf* f, int channel, int pitch_wheel);
 TSFDEF int tsf_channel_set_pitchrange(tsf* f, int channel, float pitch_range);
 TSFDEF int tsf_channel_set_tuning(tsf* f, int channel, float tuning);
+TSFDEF int tsf_channel_set_sustain(tsf* f, int channel, int flag_sustain);
 
 // Start or stop playing notes on a channel (needs channel preset to be set)
 //   channel: channel number
@@ -448,7 +450,7 @@ struct tsf_preset
 
 struct tsf_voice
 {
-	int playingPreset, playingKey, playingChannel;
+	int playingPreset, playingKey, playingChannel, heldSustain;
 	struct tsf_region* region;
 	double pitchInputTimecents, pitchOutputFactor;
 	double sourceSamplePosition;
@@ -461,7 +463,7 @@ struct tsf_voice
 
 struct tsf_channel
 {
-	unsigned short presetIndex, bank, pitchWheel, midiPan, midiVolume, midiExpression, midiRPN, midiData;
+	unsigned short presetIndex, bank, pitchWheel, midiPan, midiVolume, midiExpression, midiRPN, midiData : 14, sustain : 1;
 	float panOffset, gainDB, pitchRange, tuning;
 };
 
@@ -1609,6 +1611,7 @@ TSFDEF int tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		voice->playingPreset = preset_index;
 		voice->playingKey = key;
 		voice->playIndex = voicePlayIndex;
+		voice->heldSustain = 0;
 		voice->noteGainDB = f->globalGainDB - region->attenuation - tsf_gainToDecibels(1.0f / vel);
 
 		if (f->channels)
@@ -1776,7 +1779,7 @@ static struct tsf_channel* tsf_channel_init(tsf* f, int channel)
 		c->pitchWheel = c->midiPan = 8192;
 		c->midiVolume = c->midiExpression = 16383;
 		c->midiRPN = 0xFFFF;
-		c->midiData = 0;
+		c->midiData = c->sustain = 0;
 		c->panOffset = 0.0f;
 		c->gainDB = 0.0f;
 		c->pitchRange = 2.0f;
@@ -1905,35 +1908,62 @@ TSFDEF int tsf_channel_set_tuning(tsf* f, int channel, float tuning)
 	return 1;
 }
 
+TSFDEF int tsf_channel_set_sustain(tsf* f, int channel, int flag_sustain)
+{
+	struct tsf_channel *c = tsf_channel_init(f, channel);
+	if (!c) return 0;
+	if (!c->sustain == !flag_sustain) return 1;
+	c->sustain = (unsigned short)(flag_sustain != 0);
+	//Turning on sustain does no action now, just starts note_off behaving differently
+	if (flag_sustain) return 1;
+	//Turning off sustain, actually end voices that got a note_off and were set to heldSustain status
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	for (; v != vEnd; v++)
+		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE && v->heldSustain)
+			tsf_voice_end(f, v);
+	return 1;
+}
+
 TSFDEF int tsf_channel_note_on(tsf* f, int channel, int key, float vel)
 {
 	if (!f->channels || channel >= f->channels->channelNum) return 1;
 	f->channels->activeChannel = channel;
+	if (!vel)
+	{
+		tsf_channel_note_off(f, channel, key);
+		return 1;
+	}
 	return tsf_note_on(f, f->channels->channels[channel].presetIndex, key, vel);
 }
 
 TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 {
+	unsigned sustain;
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching channel, key and look up the smallest play index
-		if (v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE) continue;
+		if (v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE || v->heldSustain) continue;
 		else if (!vMatchFirst || v->playIndex < vMatchFirst->playIndex) vMatchFirst = vMatchLast = v;
 		else if (v->playIndex == vMatchFirst->playIndex) vMatchLast = v;
 	}
 	if (!vMatchFirst) return;
-	for (v = vMatchFirst; v <= vMatchLast; v++)
+	for (sustain = f->channels->channels[channel].sustain, v = vMatchFirst; v <= vMatchLast; v++)
 	{
 		//Stop all voices with matching channel, key and the smallest play index which was enumerated above
 		if (v != vMatchFirst && v != vMatchLast &&
 			(v->playIndex != vMatchFirst->playIndex || v->playingPreset == -1 || v->playingChannel != channel || v->playingKey != key || v->ampenv.segment >= TSF_SEGMENT_RELEASE)) continue;
-		tsf_voice_end(f, v);
+		//Don't turn off if sustain is active, just mark as held by sustain so we don't forget it
+		if (sustain)
+			v->heldSustain = 1;
+		else
+			tsf_voice_end(f, v);
 	}
 }
 
 TSFDEF void tsf_channel_note_off_all(tsf* f, int channel)
 {
+	//Ignore sustain channel settings, note_off_all overrides
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE)
@@ -1968,6 +1998,7 @@ TSFDEF int tsf_channel_midi_control(tsf* f, int channel, int controller, int con
 		case 100 /*RPN_LSB*/         : c->midiRPN = (unsigned short)(((c->midiRPN == 0xFFFF ? 0 : c->midiRPN) & 0x3F80) |  control_value); return 1;
 		case  98 /*NRPN_LSB*/        : c->midiRPN = 0xFFFF; return 1;
 		case  99 /*NRPN_MSB*/        : c->midiRPN = 0xFFFF; return 1;
+		case  64 /*SUSTAIN*/         : tsf_channel_set_sustain(f, channel, (int)(control_value >= 64)); return 1;
 		case 120 /*ALL_SOUND_OFF*/   : tsf_channel_sounds_off_all(f, channel); return 1;
 		case 123 /*ALL_NOTES_OFF*/   : tsf_channel_note_off_all(f, channel);   return 1;
 		case 121 /*ALL_CTRL_OFF*/    :
