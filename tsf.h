@@ -21,7 +21,7 @@
 
    LICENSE (MIT)
 
-   Copyright (C) 2017-2023 Bernhard Schelling
+   Copyright (C) 2017-2025 Bernhard Schelling
    Based on SFZero, Copyright (C) 2012 Steve Folta (https://github.com/stevefolta/SFZero)
 
    Permission is hereby granted, free of charge, to any person obtaining a copy of this
@@ -309,7 +309,7 @@ TSFDEF float tsf_channel_get_tuning(tsf* f, int channel);
 
 #define TSF_TRUE 1
 #define TSF_FALSE 0
-#define TSF_BOOL char
+#define TSF_BOOL unsigned char
 #define TSF_PI 3.14159265358979323846264338327950288
 #define TSF_NULL 0
 
@@ -419,7 +419,7 @@ static void tsf_hydra_read_shdr(struct tsf_hydra_shdr* i, struct tsf_stream* str
 
 struct tsf_riffchunk { tsf_fourcc id; tsf_u32 size; };
 struct tsf_envelope { float delay, attack, hold, decay, sustain, release, keynumToHold, keynumToDecay; };
-struct tsf_voice_envelope { float level, slope; int samplesUntilNextSegment; short segment, midiVelocity; struct tsf_envelope parameters; TSF_BOOL segmentIsExponential, isAmpEnv; };
+struct tsf_voice_envelope { unsigned char segment, segmentIsExponential : 1, isAmpEnv : 1; short midiVelocity; float level, slope; int samplesUntilNextSegment; struct tsf_envelope parameters; };
 struct tsf_voice_lowpass { double QInv, a0, a1, b1, b2, z1, z2; TSF_BOOL active; };
 struct tsf_voice_lfo { int samplesUntil; float level, delta; };
 
@@ -989,6 +989,7 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	#else
 	// Inline convert the samples from short to float
 	float *res, *out; const short *in;
+	(void)pRawBuffer;
 	*pSmplCount = chunkSmpl->size / (unsigned int)sizeof(short);
 	*pFloatBuffer = (float*)TSF_MALLOC(*pSmplCount * sizeof(float));
 	if (!*pFloatBuffer || !stream->read(stream->data, *pFloatBuffer, chunkSmpl->size)) return 0;
@@ -1549,7 +1550,7 @@ TSFDEF int tsf_set_max_voices(tsf* f, int max_voices)
 TSFDEF int tsf_note_on(tsf* f, int preset_index, int key, float vel)
 {
 	short midiVelocity = (short)(vel * 127);
-	int voicePlayIndex;
+	unsigned int voicePlayIndex;
 	struct tsf_region *region, *regionEnd;
 
 	if (preset_index < 0 || preset_index >= f->presetNum) return 1;
