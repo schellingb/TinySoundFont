@@ -95,13 +95,10 @@
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ItemGroup>
-    <ClCompile Include="minisdl_audio.c" />
     <ClCompile Include="example1.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="minisdl_audio.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\tsf.h" />
+    <ClInclude Include="..\tsf.h" />
+    <ClInclude Include="miniaudio_io.h" />
   </ItemGroup>
 </Project>

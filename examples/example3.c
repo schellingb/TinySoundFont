@@ -1,4 +1,5 @@
-#include "minisdl_audio.h"
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio_io.h"
 
 #define TSF_IMPLEMENTATION
 #include "../tsf.h"
@@ -14,14 +15,13 @@ static double g_Msec;               //current playback time
 static tml_message* g_MidiMessage;  //next message to be played
 
 // Callback function called by the audio thread
-static void AudioCallback(void* data, Uint8 *stream, int len)
+static void AudioCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
-	//Number of samples to process
-	int SampleBlock, SampleCount = (len / (2 * sizeof(float))); //2 output channels
-	for (SampleBlock = TSF_RENDER_EFFECTSAMPLEBLOCK; SampleCount; SampleCount -= SampleBlock, stream += (SampleBlock * (2 * sizeof(float))))
+	float* stream = (float*)pOutput;
+	for (ma_uint32 SampleBlock = TSF_RENDER_EFFECTSAMPLEBLOCK; frameCount; frameCount -= SampleBlock, stream += SampleBlock * 2) // 2 channel output
 	{
 		//We progress the MIDI playback and then process TSF_RENDER_EFFECTSAMPLEBLOCK samples at once
-		if (SampleBlock > SampleCount) SampleBlock = SampleCount;
+		if (SampleBlock > frameCount) SampleBlock = frameCount;
 
 		//Loop through all MIDI messages which need to be played up until the current playback time
 		for (g_Msec += SampleBlock * (1000.0 / 44100.0); g_MidiMessage && g_Msec >= g_MidiMessage->time; g_MidiMessage = g_MidiMessage->next)
@@ -47,7 +47,7 @@ static void AudioCallback(void* data, Uint8 *stream, int len)
 		}
 
 		// Render the block of audio samples in float format
-		tsf_render_float(g_TinySoundFont, (float*)stream, SampleBlock, 0);
+		tsf_render_float(g_TinySoundFont, stream, (int)SampleBlock, 0);
 	}
 }
 
@@ -61,15 +61,16 @@ int main(int argc, char *argv[])
 	tml_message* TinyMidiLoader = NULL;
 
 	// Define the desired audio output format we request
-	SDL_AudioSpec OutputAudioSpec;
-	OutputAudioSpec.freq = 44100;
-	OutputAudioSpec.format = AUDIO_F32;
-	OutputAudioSpec.channels = 2;
-	OutputAudioSpec.samples = 4096;
-	OutputAudioSpec.callback = AudioCallback;
+	ma_device device;
+	ma_device_config deviceConfig;
+	deviceConfig = ma_device_config_init(ma_device_type_playback);
+	deviceConfig.playback.format = ma_format_f32;
+	deviceConfig.playback.channels = 2;
+	deviceConfig.sampleRate = 44100;
+	deviceConfig.dataCallback = AudioCallback;
 
 	// Initialize the audio system
-	if (SDL_AudioInit(TSF_NULL) < 0)
+	if (ma_device_init(NULL, &deviceConfig, &device) != MA_SUCCESS)
 	{
 		fprintf(stderr, "Could not initialize audio hardware or driver\n");
 		return 1;
@@ -102,21 +103,21 @@ int main(int argc, char *argv[])
 	tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0);
 
 	// Set the SoundFont rendering output mode
-	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, -10.0f);
-
-	// Request the desired audio output format
-	if (SDL_OpenAudio(&OutputAudioSpec, TSF_NULL) < 0)
-	{
-		fprintf(stderr, "Could not open the audio hardware or the desired audio output format\n");
-		return 1;
-	}
+	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, (int)deviceConfig.sampleRate, -10.0f);
 
 	// Start the actual audio playback here
 	// The audio thread will begin to call our AudioCallback function
-	SDL_PauseAudio(0);
+	if (ma_device_start(&device) != MA_SUCCESS)
+	{
+		fprintf(stderr, "Failed to start playback device.\n");
+		ma_device_uninit(&device);
+		return 1;
+	}
 
-	//Wait until the entire MIDI file has been played back (until the end of the linked message list is reached)
-	while (g_MidiMessage != NULL) SDL_Delay(100);
+	// Wait until the entire MIDI file has been played back (until the end of the linked message list is reached)
+	while (g_MidiMessage != NULL) ma_sleep(100);
+
+	ma_device_uninit(&device);
 
 	// We could call tsf_close(g_TinySoundFont) and tml_free(TinyMidiLoader)
 	// here to free the memory and resources but we just let the OS clean up
