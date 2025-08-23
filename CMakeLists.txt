@@ -16,18 +16,17 @@ set_property(
   TARGET TinySoundFont
   APPEND PROPERTY
   PUBLIC_HEADER "tml.h" "tsf.h")
-set_target_properties(TinySoundFont PROPERTIES OUTPUT_NAME tinysoundfont)
 set_target_properties(TinySoundFont PROPERTIES VERSION ${PROJECT_VERSION})
 
 install(
   TARGETS TinySoundFont
   EXPORT TinySoundFontTargets
   PUBLIC_HEADER
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/tinysoundfont"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/tsf"
     COMPONENT devel)
 install(
   EXPORT TinySoundFontTargets
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/tinysoundfont"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/tsf"
     COMPONENT devel)
 install(
   FILES "LICENSE" "README.md"
