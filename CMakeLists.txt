@@ -20,7 +20,7 @@ set_property(
 set_target_properties(TinySoundFont PROPERTIES VERSION ${PROJECT_VERSION})
 
 write_basic_package_version_file(
-  "${PROJECT_NAME}ConfigVersion.cmake"
+  "TinySoundFontConfigVersion.cmake"
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY SameMajorVersion)
   
@@ -32,8 +32,12 @@ install(
     COMPONENT devel)
 install(
   EXPORT TinySoundFontConfig
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/tsf"
-    COMPONENT devel)
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/tsf"
+  COMPONENT devel)
+install(
+  FILES "${CMAKE_BINARY_DIR}/TinySoundFontConfigVersion.cmake"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/tsf"
+  COMPONENT devel)
 install(
   FILES "LICENSE" "README.md"
   TYPE DOC
