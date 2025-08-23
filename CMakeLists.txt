@@ -6,6 +6,7 @@ set(PROJECT_SNAME "TinySoundFont")
 project(TinySoundFont VERSION "0.9")
 message(STATUS "version: ${PROJECT_VERSION}")
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 add_library(TinySoundFont INTERFACE)
 target_include_directories(
@@ -18,14 +19,19 @@ set_property(
   PUBLIC_HEADER "tml.h" "tsf.h")
 set_target_properties(TinySoundFont PROPERTIES VERSION ${PROJECT_VERSION})
 
+write_basic_package_version_file(
+  "${PROJECT_NAME}ConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion)
+  
 install(
   TARGETS TinySoundFont
-  EXPORT TinySoundFontTargets
+  EXPORT TinySoundFontConfig
   PUBLIC_HEADER
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/tsf"
     COMPONENT devel)
 install(
-  EXPORT TinySoundFontTargets
+  EXPORT TinySoundFontConfig
     DESTINATION "${CMAKE_INSTALL_DATADIR}/tsf"
     COMPONENT devel)
 install(
