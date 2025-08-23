@@ -3,11 +3,19 @@
 cmake_minimum_required(VERSION 3.14)
 set(PROJECT_VENDOR "schellingb")
 set(PROJECT_SNAME "TinySoundFont")
-project(TinySoundFont VERSION "0.9.0")
+project(TinySoundFont VERSION "0.9")
 message(STATUS "version: ${PROJECT_VERSION}")
 include(GNUInstallDirs)
 
-add_library(TinySoundFont INTERFACE tml.h tsf.h)
+add_library(TinySoundFont INTERFACE)
+target_include_directories(
+  TinySoundFont INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  $<INSTALL_INTERFACE:include>)
+set_property(
+  TARGET TinySoundFont
+  APPEND PROPERTY
+  PUBLIC_HEADER "tml.h" "tsf.h")
 set_target_properties(TinySoundFont PROPERTIES OUTPUT_NAME tinysf)
 set_target_properties(TinySoundFont PROPERTIES VERSION ${PROJECT_VERSION})
 
@@ -18,10 +26,9 @@ install(
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/tinysf"
     COMPONENT devel)
 install(
-  DIRECTORY "${CMAKE_BINARY_DIR}/etc/"
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/tinysf"
-  COMPONENT devel
-  FILES_MATCHING PATTERN "*onfig*.cmake")
+  EXPORT TinySoundFontTargets
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/tinysf"
+    COMPONENT devel)
 install(
   FILES "LICENSE" "README.md"
   TYPE DOC
