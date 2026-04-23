@@ -1,7 +1,8 @@
 #define TSF_IMPLEMENTATION
 #include "../tsf.h"
 
-#include "minisdl_audio.h"
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio_io.h"
 
 //This is a minimal SoundFont with a single loopin saw-wave sample/instrument/preset (484 bytes)
 const static unsigned char MinimalSoundFont[] =
@@ -23,28 +24,28 @@ const static unsigned char MinimalSoundFont[] =
 static tsf* g_TinySoundFont;
 
 // Callback function called by the audio thread
-static void AudioCallback(void* data, Uint8 *stream, int len)
+static void AudioCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
 	// Note we don't do any thread concurrency control here because in this
 	// example all notes are started before the audio playback begins.
 	// If you do play notes while the audio thread renders output you
 	// will need a mutex of some sort.
-	int SampleCount = (len / (2 * sizeof(short))); //2 output channels
-	tsf_render_short(g_TinySoundFont, (short*)stream, SampleCount, 0);
+	tsf_render_short(g_TinySoundFont, (short*)pOutput, (int)frameCount, 0);
 }
 
 int main(int argc, char *argv[])
 {
 	// Define the desired audio output format we request
-	SDL_AudioSpec OutputAudioSpec;
-	OutputAudioSpec.freq = 44100;
-	OutputAudioSpec.format = AUDIO_S16;
-	OutputAudioSpec.channels = 2;
-	OutputAudioSpec.samples = 4096;
-	OutputAudioSpec.callback = AudioCallback;
+	ma_device device;
+	ma_device_config deviceConfig;
+	deviceConfig = ma_device_config_init(ma_device_type_playback);
+	deviceConfig.playback.format = ma_format_s16;
+	deviceConfig.playback.channels = 2;
+	deviceConfig.sampleRate = 44100;
+	deviceConfig.dataCallback = AudioCallback;
 
 	// Initialize the audio system
-	if (SDL_AudioInit(NULL) < 0)
+	if (ma_device_init(NULL, &deviceConfig, &device) != MA_SUCCESS)
 	{
 		fprintf(stderr, "Could not initialize audio hardware or driver\n");
 		return 1;
@@ -54,32 +55,32 @@ int main(int argc, char *argv[])
 	g_TinySoundFont = tsf_load_memory(MinimalSoundFont, sizeof(MinimalSoundFont));
 	if (!g_TinySoundFont)
 	{
-		fprintf(stderr, "Could not load soundfont\n");
+		fprintf(stderr, "Could not load SoundFont\n");
 		return 1;
 	}
 
 	// Set the rendering output mode to 44.1khz and -10 decibel gain
-	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, -10);
+	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, (int)deviceConfig.sampleRate, -10);
 
 	// Start two notes before starting the audio playback
 	tsf_note_on(g_TinySoundFont, 0, 48, 1.0f); //C2
 	tsf_note_on(g_TinySoundFont, 0, 52, 1.0f); //E2
 
-	// Request the desired audio output format
-	if (SDL_OpenAudio(&OutputAudioSpec, NULL) < 0)
+	// Start the actual audio playback here
+	// The audio thread will begin to call our AudioCallback function
+	if (ma_device_start(&device) != MA_SUCCESS)
 	{
-		fprintf(stderr, "Could not open the audio hardware or the desired audio output format\n");
+		fprintf(stderr, "Failed to start playback device.\n");
+		ma_device_uninit(&device);
 		return 1;
 	}
 
-	// Start the actual audio playback here
-	// The audio thread will begin to call our AudioCallback function
-	SDL_PauseAudio(0);
-
 	// Let the audio callback play some sound for 3 seconds
-	SDL_Delay(3000);
+	ma_sleep(3000);
 
-	// We could call tsf_close(g_TinySoundFont) and SDL_DestroyMutex(g_Mutex)
+	ma_device_uninit(&device);
+
+	// We could call tsf_close(g_TinySoundFont)
 	// here to free the memory and resources but we just let the OS clean up
 	// because the process ends here.
 	return 0;
