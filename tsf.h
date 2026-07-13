@@ -325,6 +325,24 @@ typedef signed short tsf_s16;
 typedef unsigned int tsf_u32;
 typedef char tsf_char20[20];
 
+#ifdef WORDS_BIGENDIAN
+#ifndef TSF_SWAP16LE
+#define TSF_SWAP16LE tsf_swap16le
+static tsf_u16 tsf_swap16le(tsf_u16 x) { return (tsf_u16) ((x << 8) | (x >> 8)); }
+#endif
+#ifndef TSF_SWAP32LE
+#define TSF_SWAP32LE tsf_swap32le
+static tsf_u32 tsf_swap32le(tsf_u32 x) { return (tsf_u32) ((x << 24) | ((x << 8) & 0x00FF0000) | ((x >>  8) & 0x0000FF00) | (x >> 24)); }
+#endif
+#else /* Little Endian : */
+#ifndef TSF_SWAP16LE
+#define TSF_SWAP16LE(x) x
+#endif
+#ifndef TSF_SWAP32LE
+#define TSF_SWAP32LE(x) x
+#endif
+#endif /* WORDS_BIGENDIAN */
+
 #define TSF_FourCCEquals(value1, value2) (value1[0] == value2[0] && value1[1] == value2[1] && value1[2] == value2[2] && value1[3] == value2[3])
 
 struct tsf
@@ -394,7 +412,11 @@ struct tsf_hydra
 	int phdrNum, pbagNum, pmodNum, pgenNum, instNum, ibagNum, imodNum, igenNum, shdrNum;
 };
 
+#ifdef WORDS_BIGENDIAN
+union tsf_hydra_genamount { struct { tsf_u8 hi, lo; } range; tsf_s16 shortAmount; tsf_u16 wordAmount; };
+#else
 union tsf_hydra_genamount { struct { tsf_u8 lo, hi; } range; tsf_s16 shortAmount; tsf_u16 wordAmount; };
+#endif
 struct tsf_hydra_phdr { tsf_char20 presetName; tsf_u16 preset, bank, presetBagNdx; tsf_u32 library, genre, morphology; };
 struct tsf_hydra_pbag { tsf_u16 genNdx, modNdx; };
 struct tsf_hydra_pmod { tsf_u16 modSrcOper, modDestOper; tsf_s16 modAmount; tsf_u16 modAmtSrcOper, modTransOper; };
@@ -407,16 +429,26 @@ struct tsf_hydra_shdr { tsf_char20 sampleName; tsf_u32 start, end, startLoop, en
 
 #define TSFR(FIELD) stream->read(stream->data, &i->FIELD, sizeof(i->FIELD));
 #define TSFR_ARR(FIELD) stream->read(stream->data, i->FIELD, sizeof(i->FIELD));
-static void tsf_hydra_read_phdr(struct tsf_hydra_phdr* i, struct tsf_stream* stream) { TSFR_ARR(presetName) TSFR(preset) TSFR(bank) TSFR(presetBagNdx) TSFR(library) TSFR(genre) TSFR(morphology) }
-static void tsf_hydra_read_pbag(struct tsf_hydra_pbag* i, struct tsf_stream* stream) { TSFR(genNdx) TSFR(modNdx) }
-static void tsf_hydra_read_pmod(struct tsf_hydra_pmod* i, struct tsf_stream* stream) { TSFR(modSrcOper) TSFR(modDestOper) TSFR(modAmount) TSFR(modAmtSrcOper) TSFR(modTransOper) }
-static void tsf_hydra_read_pgen(struct tsf_hydra_pgen* i, struct tsf_stream* stream) { TSFR(genOper) TSFR(genAmount) }
-static void tsf_hydra_read_inst(struct tsf_hydra_inst* i, struct tsf_stream* stream) { TSFR_ARR(instName) TSFR(instBagNdx) }
-static void tsf_hydra_read_ibag(struct tsf_hydra_ibag* i, struct tsf_stream* stream) { TSFR(instGenNdx) TSFR(instModNdx) }
-static void tsf_hydra_read_imod(struct tsf_hydra_imod* i, struct tsf_stream* stream) { TSFR(modSrcOper) TSFR(modDestOper) TSFR(modAmount) TSFR(modAmtSrcOper) TSFR(modTransOper) }
-static void tsf_hydra_read_igen(struct tsf_hydra_igen* i, struct tsf_stream* stream) { TSFR(genOper) TSFR(genAmount) }
-static void tsf_hydra_read_shdr(struct tsf_hydra_shdr* i, struct tsf_stream* stream) { TSFR_ARR(sampleName) TSFR(start) TSFR(end) TSFR(startLoop) TSFR(endLoop) TSFR(sampleRate) TSFR(originalPitch) TSFR(pitchCorrection) TSFR(sampleLink) TSFR(sampleType) }
+
+#define TSFR16(x) {TSFR(x); i->x = TSF_SWAP16LE(i->x);};
+#define TSFR32(x) {TSFR(x); i->x = TSF_SWAP32LE(i->x);};
+#define TSFRGA(x) {TSFR(x); i->x.wordAmount = TSF_SWAP16LE(i->x.wordAmount); };
+
+static void tsf_hydra_read_phdr(struct tsf_hydra_phdr* i, struct tsf_stream* stream) { TSFR_ARR(presetName) TSFR16(preset) TSFR16(bank) TSFR16(presetBagNdx) TSFR32(library) TSFR32(genre) TSFR32(morphology) }
+static void tsf_hydra_read_pbag(struct tsf_hydra_pbag* i, struct tsf_stream* stream) { TSFR16(genNdx) TSFR16(modNdx) }
+static void tsf_hydra_read_pmod(struct tsf_hydra_pmod* i, struct tsf_stream* stream) { TSFR16(modSrcOper) TSFR16(modDestOper) TSFR16(modAmount) TSFR16(modAmtSrcOper) TSFR16(modTransOper) }
+static void tsf_hydra_read_pgen(struct tsf_hydra_pgen* i, struct tsf_stream* stream) { TSFR16(genOper) TSFRGA(genAmount) }
+static void tsf_hydra_read_inst(struct tsf_hydra_inst* i, struct tsf_stream* stream) { TSFR_ARR(instName) TSFR16(instBagNdx) }
+static void tsf_hydra_read_ibag(struct tsf_hydra_ibag* i, struct tsf_stream* stream) { TSFR16(instGenNdx) TSFR16(instModNdx) }
+static void tsf_hydra_read_imod(struct tsf_hydra_imod* i, struct tsf_stream* stream) { TSFR16(modSrcOper) TSFR16(modDestOper) TSFR16(modAmount) TSFR16(modAmtSrcOper) TSFR16(modTransOper) }
+static void tsf_hydra_read_igen(struct tsf_hydra_igen* i, struct tsf_stream* stream) { TSFR16(genOper) TSFRGA(genAmount) }
+static void tsf_hydra_read_shdr(struct tsf_hydra_shdr* i, struct tsf_stream* stream) { TSFR_ARR(sampleName) TSFR32(start) TSFR32(end) TSFR32(startLoop) TSFR32(endLoop) TSFR32(sampleRate) TSFR(originalPitch) TSFR(pitchCorrection) TSFR16(sampleLink) TSFR16(sampleType) }
+
+#undef TSFRGA
+#undef TSFR32
+#undef TSFR16
 #undef TSFR
+#undef TSFR_ARR
 
 struct tsf_riffchunk { tsf_fourcc id; tsf_u32 size; };
 struct tsf_envelope { float delay, attack, hold, decay, sustain, release, keynumToHold, keynumToDecay; };
@@ -487,6 +519,7 @@ static TSF_BOOL tsf_riffchunk_read(struct tsf_riffchunk* parent, struct tsf_riff
 	if (parent && sizeof(tsf_fourcc) + sizeof(tsf_u32) > parent->size) return TSF_FALSE;
 	if (!stream->read(stream->data, chunk->id, sizeof(tsf_fourcc)) || *chunk->id <= ' ' || *chunk->id >= 'z') return TSF_FALSE;
 	if (!stream->read(stream->data, &chunk->size, sizeof(tsf_u32))) return TSF_FALSE;
+	chunk->size = TSF_SWAP32LE(chunk->size);
 	if (parent && sizeof(tsf_fourcc) + sizeof(tsf_u32) + chunk->size > parent->size) return TSF_FALSE;
 	if (parent) parent->size -= sizeof(tsf_fourcc) + sizeof(tsf_u32) + chunk->size;
 	IsRiff = TSF_FourCCEquals(chunk->id, "RIFF"), IsList = TSF_FourCCEquals(chunk->id, "LIST");
@@ -998,7 +1031,7 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	*pFloatBuffer = (float*)TSF_MALLOC(*pSmplCount * sizeof(float));
 	if (!*pFloatBuffer || !stream->read(stream->data, *pFloatBuffer, chunkSmpl->size)) return 0;
 	for (res = *pFloatBuffer, out = res + *pSmplCount, in = (short*)res + *pSmplCount; out != res;)
-		*(--out) = (float)(*(--in) / 32767.0);
+		*(--out) = (float)((short)(TSF_SWAP16LE(*(--in))) / 32767.0);
 	return 1;
 	#endif
 }
