@@ -52,9 +52,16 @@ extern "C" {
 #  define CPP_DEFAULT0
 #endif
 
+#if defined(__GNUC__)
+//to avoid -Wunused warnings with TSF_STATIC :
+#define TSF_UNUSEDFN __attribute__((__unused__))
+#else
+#define TSF_UNUSEDFN
+#endif
+
 //define this if you want the API functions to be static
 #ifdef TSF_STATIC
-#define TSFDEF static
+#define TSFDEF TSF_UNUSEDFN static
 #else
 #define TSFDEF extern
 #endif
