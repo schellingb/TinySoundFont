@@ -1915,13 +1915,15 @@ TSFDEF int tsf_channel_set_tuning(tsf* f, int channel, float tuning)
 TSFDEF int tsf_channel_set_sustain(tsf* f, int channel, int flag_sustain)
 {
 	struct tsf_channel *c = tsf_channel_init(f, channel);
+	struct tsf_voice *v, *vEnd;
 	if (!c) return 0;
 	if (!c->sustain == !flag_sustain) return 1;
 	c->sustain = (unsigned short)(flag_sustain != 0);
 	//Turning on sustain does no action now, just starts note_off behaving differently
 	if (flag_sustain) return 1;
 	//Turning off sustain, actually end voices that got a note_off and were set to heldSustain status
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	v = f->voices;
+	vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE && v->heldSustain)
 			tsf_voice_end(f, v);
