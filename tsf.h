@@ -274,6 +274,8 @@ TSFDEF float tsf_channel_get_tuning(tsf* f, int channel);
 // Grace release time for quick voice off (avoid clicking noise)
 #define TSF_FASTRELEASETIME 0.01f
 
+#include <stddef.h>
+
 #if !defined(TSF_MALLOC) || !defined(TSF_FREE) || !defined(TSF_REALLOC)
 #  include <stdlib.h>
 #  define TSF_MALLOC  malloc
@@ -311,7 +313,7 @@ TSFDEF float tsf_channel_get_tuning(tsf* f, int channel);
 #define TSF_FALSE 0
 #define TSF_BOOL unsigned char
 #define TSF_PI 3.14159265358979323846264338327950288
-#define TSF_NULL 0
+#define TSF_NULL NULL
 
 #ifdef __cplusplus
 extern "C" {
@@ -582,8 +584,13 @@ static void tsf_region_operator(struct tsf_region* region, tsf_u16 genOper, unio
 
 		_GEN_MAX = 59
 	};
+	#if 0
 	#define _TSFREGIONOFFSET(TYPE, FIELD) (unsigned char)(((TYPE*)&((struct tsf_region*)0)->FIELD) - (TYPE*)0)
 	#define _TSFREGIONENVOFFSET(TYPE, ENV, FIELD) (unsigned char)(((TYPE*)&((&(((struct tsf_region*)0)->ENV))->FIELD)) - (TYPE*)0)
+	#else
+	#define _TSFREGIONOFFSET(TYPE, FIELD) (unsigned char)(offsetof(struct tsf_region,FIELD) / sizeof(TYPE))
+	#define _TSFREGIONENVOFFSET(TYPE, ENV, FIELD) (unsigned char)((offsetof(struct tsf_region,ENV) + offsetof(struct tsf_envelope,FIELD)) / sizeof(TYPE))
+	#endif
 	static const struct { unsigned char mode, offset; } genMetas[_GEN_MAX] =
 	{
 		{ GEN_UINT_ADD                     , _TSFREGIONOFFSET(unsigned int, offset               ) }, // 0 StartAddrsOffset
