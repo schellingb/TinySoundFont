@@ -402,7 +402,7 @@ static int tsf_stream_memory_skip(struct tsf_stream_memory* m, unsigned int coun
 TSFDEF tsf* tsf_load_memory(const void* buffer, int size)
 {
 	struct tsf_stream stream = { TSF_NULL, (int(*)(void*,void*,unsigned int))&tsf_stream_memory_read, (int(*)(void*,unsigned int))&tsf_stream_memory_skip };
-	struct tsf_stream_memory f = { 0, 0, 0 };
+	struct tsf_stream_memory f = { TSF_NULL, 0, 0 };
 	f.buffer = (const char*)buffer;
 	f.total = size;
 	stream.data = &f;
