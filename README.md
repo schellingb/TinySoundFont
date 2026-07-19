@@ -32,6 +32,13 @@ There are also [examples available](https://github.com/schellingb/TinySoundFont/
 
 C standard libraries for fopen, math and malloc (can be removed by providing custom functions with #defines).
 
+## Strict No LLM / No AI Policy
+No LLMs for issues. No LLMs for source contributions/patches/pull requests.
+
+AI must not be used to generate code for contributions to this project.
+
+Any pull request to this project will ask you to confirm that you are the author and that you are contributing your changes under the license of the project.
+
 ## License
 
 TinySoundFont is available under the [MIT license](https://choosealicense.com/licenses/mit/).
