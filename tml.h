@@ -373,11 +373,8 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 		}
 	}
 
-	if (deltatime || evt->type)
-	{
-		evt->time = deltatime;
-		p->message_count++;
-	}
+	evt->time = deltatime;
+	p->message_count++;
 	return evt->type;
 }
 
