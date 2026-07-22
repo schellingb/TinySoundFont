@@ -1489,13 +1489,12 @@ TSFDEF tsf* tsf_load(struct tsf_stream* stream)
 		res->fontSamples = floatBuffer;
 		floatBuffer = TSF_NULL; // don't free below
 	}
-	if (0)
-	{
-		out_of_memory:
-		TSF_FREE(res);
-		res = TSF_NULL;
-		//if (e) *e = TSF_OUT_OF_MEMORY;
-	}
+	goto done;
+    out_of_memory:
+	TSF_FREE(res);
+	res = TSF_NULL;
+	//if (e) *e = TSF_OUT_OF_MEMORY;
+    done:
 	TSF_FREE(hydra.phdrs); TSF_FREE(hydra.pbags); TSF_FREE(hydra.pmods);
 	TSF_FREE(hydra.pgens); TSF_FREE(hydra.insts); TSF_FREE(hydra.ibags);
 	TSF_FREE(hydra.imods); TSF_FREE(hydra.igens); TSF_FREE(hydra.shdrs);
