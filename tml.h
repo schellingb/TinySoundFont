@@ -256,10 +256,10 @@ struct tml_parser
 
 enum TMLSystemType
 {
-	TML_TEXT  = 0x01, TML_COPYRIGHT    = 0x02, TML_TRACK_NAME     = 0x03, TML_INST_NAME     = 0x04, TML_LYRIC           = 0x05, TML_MARKER       = 0x06, TML_CUE_POINT = 0x07,
-	TML_EOT   = 0x2f, TML_SMPTE_OFFSET = 0x54, TML_TIME_SIGNATURE = 0x58, TML_KEY_SIGNATURE = 0x59, TML_SEQUENCER_EVENT = 0x7f,
-	TML_SYSEX = 0xf0, TML_TIME_CODE    = 0xf1, TML_SONG_POSITION  = 0xf2, TML_SONG_SELECT   = 0xf3, TML_TUNE_REQUEST    = 0xf6, TML_EOX          = 0xf7, TML_SYNC      = 0xf8,
-	TML_TICK  = 0xf9, TML_START        = 0xfa, TML_CONTINUE       = 0xfb, TML_STOP          = 0xfc, TML_ACTIVE_SENSING  = 0xfe, TML_SYSTEM_RESET = 0xff
+	TML_TEXT  = 0x01, TML_COPYRIGHT = 0x02, TML_TRACK_NAME    = 0x03, TML_INST_NAME      = 0x04, TML_LYRIC          = 0x05, TML_MARKER          = 0x06, TML_CUE_POINT = 0x07,
+	TML_PORT  = 0x21, TML_EOT       = 0x2f, TML_SMPTE_OFFSET  = 0x54, TML_TIME_SIGNATURE = 0x58, TML_KEY_SIGNATURE  = 0x59, TML_SEQUENCER_EVENT = 0x7f,
+	TML_SYSEX = 0xf0, TML_TIME_CODE = 0xf1, TML_SONG_POSITION = 0xf2, TML_SONG_SELECT    = 0xf3, TML_TUNE_REQUEST   = 0xf6, TML_EOX             = 0xf7, TML_SYNC      = 0xf8,
+	TML_TICK  = 0xf9, TML_START     = 0xfa, TML_CONTINUE      = 0xfb, TML_STOP           = 0xfc, TML_ACTIVE_SENSING = 0xfe, TML_SYSTEM_RESET    = 0xff
 };
 
 static int tml_readbyte(struct tml_parser* p)
@@ -323,6 +323,11 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 
 		switch (meta_type)
 		{
+			case TML_PORT:
+				if (buflen != 1) { TML_WARN("Invalid length for Port meta event"); return -1; }
+				evt->type = TML_PORT;
+				evt->key = metadata[0];
+				break;
 			case TML_EOT:
 				if (buflen != 0) { TML_WARN("Invalid length for EndOfTrack event"); return -1; }
 				if (!deltatime) return TML_EOT; //no need to store this message
