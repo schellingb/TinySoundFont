@@ -194,6 +194,7 @@ TSFDEF int tsf_active_voice_count(tsf* f);
 //   flag_mixing: if 0 clear the buffer first, otherwise mix into existing data
 TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing CPP_DEFAULT0);
 TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing CPP_DEFAULT0);
+TSFDEF void tsf_render_float_separate(tsf* f, float* bufferL, float* bufferR, int samples CPP_DEFAULT0);
 
 // Higher level channel based functions, set up channel parameters
 //   channel: channel number
@@ -1217,12 +1218,12 @@ static void tsf_voice_calcpitchratio(struct tsf_voice* v, float pitchShift, floa
 	v->pitchOutputFactor = v->region->sample_rate / (tsf_timecents2Secsd(v->region->pitch_keycenter * 100.0) * outSampleRate);
 }
 
-static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, int numSamples)
+TSFDEF void tsf_voice_render_separate(tsf* f, struct tsf_voice* v, float* outputBufferL, float* outputBufferR, int numSamples)
 {
 	struct tsf_region* region = v->region;
 	float* input = f->fontSamples;
-	float* outL = outputBuffer;
-	float* outR = (f->outputmode == TSF_STEREO_UNWEAVED ? outL + numSamples : TSF_NULL);
+	float* outL = outputBufferL;
+	float* outR = outputBufferR;
 
 	// Cache some values, to give them at least some chance of ending up in registers.
 	TSF_BOOL updateModEnv = (region->modEnvToPitch || region->modEnvToFilterFc);
@@ -1356,6 +1357,11 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 
 	v->sourceSamplePosition = tmpSourceSamplePosition;
 	if (tmpLowpass.active || dynamicLowpass) v->lowpass = tmpLowpass;
+}
+
+TSFDEF void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, int numSamples)
+{
+    tsf_voice_render_separate(f, v, outputBuffer, f->outputmode == TSF_STEREO_UNWEAVED ? outputBuffer + numSamples : TSF_NULL, numSamples);
 }
 
 TSFDEF tsf* tsf_load(struct tsf_stream* stream)
@@ -1742,6 +1748,16 @@ TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1)
 			tsf_voice_render(f, v, buffer, samples);
+}
+
+TSFDEF void tsf_render_float_separate(tsf* f, float* bufferL, float* bufferR, int samples)
+{
+	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	TSF_MEMSET(bufferL, 0, sizeof(float) * samples);
+	TSF_MEMSET(bufferR, 0, sizeof(float) * samples);
+	for (; v != vEnd; v++)
+		if (v->playingPreset != -1)
+			tsf_voice_render_separate(f, v, bufferL, bufferR, samples);
 }
 
 static void tsf_channel_setup_voice(tsf* f, struct tsf_voice* v)
