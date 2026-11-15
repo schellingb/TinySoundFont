@@ -157,6 +157,13 @@ int main(int argc, const char** argv)
 				/* Write data after sample chunk */
 				fseek(f_sf_in, end_smpchunk, SEEK_SET);
 				sfo_copy(f_sf_in, f_sf_out, end_sf - end_smpchunk);
+
+				/* Recalculate the chunk size for the root level RIFF chunk */
+				unsigned int end_out = (unsigned int)ftell(f_sf_out);
+				unsigned int riff_size = end_out - 8;
+				fseek(f_sf_out, 4, SEEK_SET);
+				fwrite(&riff_size, 4, 1, f_sf_out);
+
 				fclose(f_sf_out);
 			}
 			else if (arg_smpl)
