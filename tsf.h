@@ -624,7 +624,7 @@ static void tsf_region_operator(struct tsf_region* region, tsf_u16 genOper, unio
 			case GEN_FLOAT:      ((       float*)region)[offset]  = amount->shortAmount;     return;
 			case GEN_INT:        ((         int*)region)[offset]  = amount->shortAmount;     return;
 			case GEN_UINT_ADD:   ((unsigned int*)region)[offset] += amount->shortAmount;     return;
-			case GEN_UINT_ADD15: ((unsigned int*)region)[offset] += amount->shortAmount<<15; return;
+			case GEN_UINT_ADD15: ((unsigned int*)region)[offset] += amount->shortAmount * 32768; return;
 			case GEN_KEYRANGE:   region->lokey = amount->range.lo; region->hikey = amount->range.hi; return;
 			case GEN_VELRANGE:   region->lovel = amount->range.lo; region->hivel = amount->range.hi; return;
 			case GEN_LOOPMODE:   region->loop_mode       = ((amount->wordAmount&3) == 3 ? TSF_LOOPMODE_SUSTAIN : ((amount->wordAmount&3) == 1 ? TSF_LOOPMODE_CONTINUOUS : TSF_LOOPMODE_NONE)); return;
@@ -1493,7 +1493,7 @@ TSFDEF void tsf_close(tsf* f)
 
 TSFDEF void tsf_reset(tsf* f)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && (v->ampenv.segment < TSF_SEGMENT_RELEASE || v->ampenv.parameters.release))
 			tsf_voice_endquick(f, v);
@@ -1566,7 +1566,7 @@ TSFDEF int tsf_note_on(tsf* f, int preset_index, int key, float vel)
 		struct tsf_voice *voice, *v, *vEnd; TSF_BOOL doLoop; float lowpassFilterQDB, lowpassFc;
 		if (key < region->lokey || key > region->hikey || midiVelocity < region->lovel || midiVelocity > region->hivel) continue;
 
-		voice = TSF_NULL, v = f->voices, vEnd = v + f->voiceNum;
+		voice = TSF_NULL, v = f->voices, vEnd = v ? v + f->voiceNum : TSF_NULL;
 		if (region->group)
 		{
 			for (; v != vEnd; v++)
@@ -1666,7 +1666,7 @@ TSFDEF int tsf_bank_note_on(tsf* f, int bank, int preset_number, int key, float 
 
 TSFDEF void tsf_note_off(tsf* f, int preset_index, int key)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching preset, key and look up the smallest play index
@@ -1694,7 +1694,7 @@ TSFDEF int tsf_bank_note_off(tsf* f, int bank, int preset_number, int key)
 
 TSFDEF void tsf_note_off_all(tsf* f)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
 		tsf_voice_end(f, v);
 }
@@ -1702,7 +1702,7 @@ TSFDEF void tsf_note_off_all(tsf* f)
 TSFDEF int tsf_active_voice_count(tsf* f)
 {
 	int count = 0;
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	for (; v != vEnd; v++) if (v->playingPreset != -1) count++;
 	return count;
 }
@@ -1737,7 +1737,7 @@ TSFDEF void tsf_render_short(tsf* f, short* buffer, int samples, int flag_mixing
 
 TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	if (!flag_mixing) TSF_MEMSET(buffer, 0, (f->outputmode == TSF_MONO ? 1 : 2) * sizeof(float) * samples);
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1)
@@ -1796,7 +1796,7 @@ static void tsf_channel_applypitch(tsf* f, int channel, struct tsf_channel* c)
 {
 	struct tsf_voice *v, *vEnd;
 	float pitchShift = (c->pitchWheel == 8192 ? c->tuning : ((c->pitchWheel / 16383.0f * c->pitchRange * 2.0f) - c->pitchRange + c->tuning));
-	for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
+	for (v = f->voices, vEnd = v ? v + f->voiceNum : TSF_NULL; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel)
 			tsf_voice_calcpitchratio(v, pitchShift, f->outSampleRate);
 }
@@ -1856,7 +1856,7 @@ TSFDEF int tsf_channel_set_pan(tsf* f, int channel, float pan)
 	struct tsf_voice *v, *vEnd;
 	struct tsf_channel *c = tsf_channel_init(f, channel);
 	if (!c) return 0;
-	for (v = f->voices, vEnd = v + f->voiceNum; v != vEnd; v++)
+	for (v = f->voices, vEnd = v ? v + f->voiceNum : TSF_NULL; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel)
 		{
 			float newpan = v->region->pan + pan - 0.5f;
@@ -1875,7 +1875,7 @@ TSFDEF int tsf_channel_set_volume(tsf* f, int channel, float volume)
 	struct tsf_channel *c = tsf_channel_init(f, channel);
 	if (!c) return 0;
 	if (gainDB == c->gainDB) return 1;
-	for (v = f->voices, vEnd = v + f->voiceNum, gainDBChange = gainDB - c->gainDB; v != vEnd; v++)
+	for (v = f->voices, vEnd = v ? v + f->voiceNum : TSF_NULL, gainDBChange = gainDB - c->gainDB; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel)
 			v->noteGainDB += gainDBChange;
 	c->gainDB = gainDB;
@@ -1921,7 +1921,7 @@ TSFDEF int tsf_channel_set_sustain(tsf* f, int channel, int flag_sustain)
 	//Turning on sustain does no action now, just starts note_off behaving differently
 	if (flag_sustain) return 1;
 	//Turning off sustain, actually end voices that got a note_off and were set to heldSustain status
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE && v->heldSustain)
 			tsf_voice_end(f, v);
@@ -1943,7 +1943,7 @@ TSFDEF int tsf_channel_note_on(tsf* f, int channel, int key, float vel)
 TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 {
 	unsigned sustain;
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL, *vMatchFirst = TSF_NULL, *vMatchLast = TSF_NULL;
 	for (; v != vEnd; v++)
 	{
 		//Find the first and last entry in the voices list with matching channel, key and look up the smallest play index
@@ -1968,7 +1968,7 @@ TSFDEF void tsf_channel_note_off(tsf* f, int channel, int key)
 TSFDEF void tsf_channel_note_off_all(tsf* f, int channel)
 {
 	//Ignore sustain channel settings, note_off_all overrides
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && v->ampenv.segment < TSF_SEGMENT_RELEASE)
 			tsf_voice_end(f, v);
@@ -1976,7 +1976,7 @@ TSFDEF void tsf_channel_note_off_all(tsf* f, int channel)
 
 TSFDEF void tsf_channel_sounds_off_all(tsf* f, int channel)
 {
-	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+	struct tsf_voice *v = f->voices, *vEnd = v ? v + f->voiceNum : TSF_NULL;
 	for (; v != vEnd; v++)
 		if (v->playingPreset != -1 && v->playingChannel == channel && (v->ampenv.segment < TSF_SEGMENT_RELEASE || v->ampenv.parameters.release))
 			tsf_voice_endquick(f, v);
